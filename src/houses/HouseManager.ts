@@ -1,8 +1,8 @@
 import type { HouseInstance } from "../types";
 import { CesiumScene } from "../cesium/CesiumScene";
 
-export const DEFAULT_HOUSE_URL = "/models/bungalow.glb";
-//export const DEFAULT_HOUSE_URL = "/models/sample-house.glb";
+//export const DEFAULT_HOUSE_URL = "/models/bungalow.glb";
+export const DEFAULT_HOUSE_URL = "/models/sample-house.glb";
 
 export class HouseManager {
   constructor(private scene: CesiumScene) {}

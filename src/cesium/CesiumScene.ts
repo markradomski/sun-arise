@@ -101,11 +101,6 @@ export class CesiumScene {
       scene: this.viewer.scene,
     });
     this.viewer.scene.primitives.add(this.house);
-
-    this.viewer.camera.flyTo({
-      destination: Cartesian3.fromDegrees(longitude, latitude, 700),
-      duration: 1.2,
-    });
   }
 
   setHouseTransform(headingDeg: number, scale = this.scale) {
@@ -146,40 +141,22 @@ export class CesiumScene {
   }
 
   tiltTo3D() {
-    const camera = this.viewer.camera;
-    const destination = Cartesian3.fromDegrees(
-      this.location.x,
-      this.location.y,
-      100000
-    );
-
-    camera.flyTo({
-      destination,
+    this.viewer.camera.setView({
       orientation: {
         heading: CesiumMath.toRadians(0),
         pitch: CesiumMath.toRadians(-60),
         roll: 0,
       },
-      duration: 1,
     });
   }
 
   tiltTo2D() {
-    const camera = this.viewer.camera;
-    const destination = Cartesian3.fromDegrees(
-      this.location.x,
-      this.location.y,
-      3000000
-    );
-
-    camera.flyTo({
-      destination,
+    this.viewer.camera.setView({
       orientation: {
         heading: CesiumMath.toRadians(0),
         pitch: CesiumMath.toRadians(-90),
         roll: 0,
       },
-      duration: 1,
     });
   }
 
