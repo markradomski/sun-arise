@@ -1,6 +1,6 @@
 # Phase 1 — Interactive Site Sandbox
 
-**Status:** steps 1–3 implemented, 4–10 proposed
+**Status:** steps 1–4 implemented, 5–10 proposed
 **Date:** 2026-09-08 (updated 2026-09-09)
 **Baseline commit:** `c1c112c`
 
@@ -9,7 +9,8 @@
 | 1. SceneObject + store | ✅ done |
 | 2. ObjectLayer reconciler | ✅ done |
 | 3. Terrain | ⚠️ done, world terrain unverified — needs an ion token (decision #2) |
-| 4–10 | proposed |
+| 4. Selection / drag / rotate / scale | ⚠️ done; desktop scale still UI-only (see below) |
+| 5–10 | proposed |
 
 ---
 
@@ -285,6 +286,37 @@ handler.setInputAction(async () => {
 ```
 
 **Acceptance:** drag is smooth at 60fps; the globe never pans mid-drag; releasing settles the house onto terrain.
+
+#### As implemented
+
+[`src/cesium/DragController.ts`](../src/cesium/DragController.ts) owns *all*
+pointer interaction, including `LEFT_CLICK` — moved out of `CesiumScene` so that
+clicking an object selects it rather than teleporting it. `CesiumScene` now has
+no input handling at all.
+
+| Input | Action |
+|---|---|
+| Drag on object | Move |
+| Shift + drag | Rotate heading (0.5°/px) |
+| Two-finger pinch | Rotate + scale (touch) |
+| Click object | Select |
+| Click ground | Move selected, or drop new |
+| Escape | Deselect |
+| Delete / Backspace | Remove selected |
+
+Two implementation notes worth keeping:
+
+- **Ground picking uses `globe.pick(ray)`, not `scene.pickPosition`.** The latter
+  picks the dragged model's own roof, so the object walks away under the cursor.
+  Picking the globe surface specifically ignores primitives and fixes it.
+- **Camera pitch of exactly −90° breaks picking** (`normalized result is not a
+  number`) — the pick ray degenerates. Any camera work in step 6 must stay off
+  the vertical singularity.
+
+**Still open:** desktop scale has no pointer gesture; it is pinch-only on touch.
+The heading slider in `Controls` drives the selected object, but there is no
+scale equivalent yet. Worth folding into step 10's UI restructure rather than
+inventing a modifier-drag for it.
 
 ---
 

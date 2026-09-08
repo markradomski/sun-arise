@@ -1,13 +1,11 @@
 import {
   Cartesian3,
-  Cartographic,
   Color,
   ConstantProperty,
   Entity,
   Ion,
   JulianDate,
   Math as CesiumMath,
-  ScreenSpaceEventType,
   ShadowMode,
   Viewer,
   type TerrainProvider,
@@ -38,7 +36,6 @@ export class CesiumScene {
   private shadowTrail: Entity[] = [];
   private destroyed = false;
   private terrainProvider?: TerrainProvider;
-  private onLocationPicked?: (location: PickedLocation) => void;
 
   constructor(container: HTMLElement) {
     const token = import.meta.env.VITE_CESIUM_ION_TOKEN as string | undefined;
@@ -73,10 +70,9 @@ export class CesiumScene {
       destination: Cartesian3.fromDegrees(151.2093, -33.8688, 2_000_000),
     });
 
-    this.viewer.screenSpaceEventHandler.setInputAction((movement: any) => {
-      const location = this.pickLocation(movement.position);
-      if (location) this.onLocationPicked?.(location);
-    }, ScreenSpaceEventType.LEFT_CLICK);
+    // No input handling here by design — DragController owns all pointer
+    // interaction so that picking an object and picking the ground stay in
+    // one place.
   }
 
   /**
@@ -102,28 +98,6 @@ export class CesiumScene {
 
   get globe() {
     return this.viewer.scene.globe;
-  }
-
-  onLocationPick(callback: (location: PickedLocation) => void) {
-    this.onLocationPicked = callback;
-  }
-
-  /** Screen point → geographic location, terrain-aware where supported. */
-  pickLocation(windowPosition: any): PickedLocation | undefined {
-    const { scene } = this.viewer;
-    const cartesian = scene.pickPositionSupported
-      ? scene.pickPosition(windowPosition)
-      : undefined;
-    const fallback =
-      cartesian ?? scene.camera.pickEllipsoid(windowPosition, scene.globe.ellipsoid);
-    if (!fallback) return undefined;
-
-    const carto = Cartographic.fromCartesian(fallback);
-    return {
-      latitude: CesiumMath.toDegrees(carto.latitude),
-      longitude: CesiumMath.toDegrees(carto.longitude),
-      height: Math.max(0, carto.height),
-    };
   }
 
   setDate(date: Date) {

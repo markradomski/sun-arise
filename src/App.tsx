@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CesiumScene } from "./cesium/CesiumScene";
+import { DragController } from "./cesium/DragController";
 import { ObjectLayer } from "./cesium/ObjectLayer";
 import { approxHeight, settleHeight } from "./cesium/terrain";
 import { entryForModelUrl } from "./houses/catalog";
@@ -26,6 +27,7 @@ export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<CesiumScene | null>(null);
   const layerRef = useRef<ObjectLayer | null>(null);
+  const dragRef = useRef<DragController | null>(null);
 
   const [date, setDate] = useState(INITIAL_DATE);
   const [playing, setPlaying] = useState(false);
@@ -63,19 +65,21 @@ export default function App() {
       scene.setDate(state.date);
     });
 
-    scene.onLocationPick((location) => {
-      const store = useSolarHouseStore.getState();
-      store.setSite({ latitude: location.latitude, longitude: location.longitude });
+    const drag = new DragController({
+      scene: scene.scene,
+      getTerrainProvider: () => scene.getTerrainProvider(),
+      onGroundClick: (location) => {
+        const store = useSolarHouseStore.getState();
+        store.setSite({ latitude: location.latitude, longitude: location.longitude });
 
-      const height = approxHeight(scene.globe, location.latitude, location.longitude);
-      const position = { ...location, height };
+        // Move the selected house if there is one, otherwise drop a new one.
+        const id = store.selectedId ?? store.addHouse(location);
+        if (store.selectedId) store.updateObject(id, { position: location });
 
-      // Move the selected house if there is one, otherwise drop a new one.
-      const id = store.selectedId ?? store.addHouse(position);
-      if (store.selectedId) store.updateObject(id, { position });
-
-      void settlePlacement(id);
+        void settlePlacement(id);
+      },
     });
+    dragRef.current = drag;
 
     async function settlePlacement(id: string) {
       const provider = scene.getTerrainProvider();
@@ -122,10 +126,12 @@ export default function App() {
       disposed = true;
       unsubscribeStore();
       unsubscribeClock();
+      drag.destroy();
       layer.destroy();
       scene.destroy();
       sceneRef.current = null;
       layerRef.current = null;
+      dragRef.current = null;
     };
   }, []);
 
