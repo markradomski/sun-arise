@@ -1,38 +1,44 @@
 import {
   Cartesian3,
+  Cartographic,
   Color,
   ConstantProperty,
-  EllipsoidTerrainProvider,
   Entity,
   Ion,
   JulianDate,
-  ScreenSpaceEventType,
-  Cartographic,
   Math as CesiumMath,
-  Model,
+  ScreenSpaceEventType,
   ShadowMode,
-  Transforms,
   Viewer,
-  HeadingPitchRoll,
+  type TerrainProvider,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
+import { createTerrain } from "./terrain";
 
 export interface ShadowSegment {
   start: { latitude: number; longitude: number; height: number };
   end: { latitude: number; longitude: number; height: number };
 }
 
+export interface PickedLocation {
+  latitude: number;
+  longitude: number;
+  height: number;
+}
+
+/**
+ * Owns the Cesium viewer, terrain and globe-level rendering concerns.
+ *
+ * Scene *contents* live in ObjectLayer, driven by the store. This class knows
+ * nothing about houses.
+ */
 export class CesiumScene {
   readonly viewer: Viewer;
-  private house?: Model;
   private liveShadow?: Entity;
   private shadowTrail: Entity[] = [];
-  private placementVersion = 0;
   private destroyed = false;
-  private location = Cartesian3.fromDegrees(151.2093, -33.8688, 0);
-  private headingDeg = 0;
-  private scale = 1;
-  private onLocationPicked?: (location: { latitude: number; longitude: number; height: number }) => void;
+  private terrainProvider?: TerrainProvider;
+  private onLocationPicked?: (location: PickedLocation) => void;
 
   constructor(container: HTMLElement) {
     const token = import.meta.env.VITE_CESIUM_ION_TOKEN as string | undefined;
@@ -47,118 +53,81 @@ export class CesiumScene {
       sceneModePicker: false,
       navigationHelpButton: false,
       fullscreenButton: false,
-      terrainProvider: new EllipsoidTerrainProvider(),
       shadows: true,
       terrainShadows: ShadowMode.RECEIVE_ONLY,
       scene3DOnly: true,
     });
 
-    this.viewer.scene.globe.enableLighting = true;
-    this.viewer.scene.globe.dynamicAtmosphereLighting = true;
-    this.viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
-    this.viewer.scene.globe.shadows = ShadowMode.RECEIVE_ONLY;
-    this.viewer.scene.backgroundColor = Color.fromCssColorString("#05070a");
+    const { scene } = this.viewer;
+    scene.globe.enableLighting = true;
+    scene.globe.dynamicAtmosphereLighting = true;
+    scene.globe.dynamicAtmosphereLightingFromSun = true;
+    scene.globe.shadows = ShadowMode.RECEIVE_ONLY;
+    scene.backgroundColor = Color.fromCssColorString("#05070a");
+
+    // Required for pickPosition to return points ON the terrain rather than
+    // through it. Without this, dragging places objects underground.
+    scene.globe.depthTestAgainstTerrain = true;
 
     this.viewer.camera.setView({
       destination: Cartesian3.fromDegrees(151.2093, -33.8688, 2_000_000),
     });
 
-    // Click/touch the globe to choose a new house location.
     this.viewer.screenSpaceEventHandler.setInputAction((movement: any) => {
-      const scene = this.viewer.scene;
-      const cartesian =
-        scene.pickPositionSupported && scene.pickPosition(movement.position)
-          ? scene.pickPosition(movement.position)
-          : scene.camera.pickEllipsoid(movement.position, scene.globe.ellipsoid);
-
-      if (!cartesian) return;
-
-      const cartographic = Cartographic.fromCartesian(cartesian);
-      const location = {
-        latitude: CesiumMath.toDegrees(cartographic.latitude),
-        longitude: CesiumMath.toDegrees(cartographic.longitude),
-        height: Math.max(0, cartographic.height),
-      };
-
-      this.location = Cartesian3.fromDegrees(
-        location.longitude,
-        location.latitude,
-        location.height
-      );
-      this.onLocationPicked?.(location);
+      const location = this.pickLocation(movement.position);
+      if (location) this.onLocationPicked?.(location);
     }, ScreenSpaceEventType.LEFT_CLICK);
   }
 
-  onLocationPick(callback: (location: { latitude: number; longitude: number; height: number }) => void) {
+  /**
+   * Terrain loads asynchronously, so it is applied after construction. The
+   * viewer renders on the ellipsoid until this resolves.
+   */
+  async initTerrain(): Promise<boolean> {
+    const { provider, hasWorldTerrain } = await createTerrain();
+    if (this.destroyed) return false;
+
+    this.terrainProvider = provider;
+    this.viewer.terrainProvider = provider;
+    return hasWorldTerrain;
+  }
+
+  getTerrainProvider(): TerrainProvider | undefined {
+    return this.terrainProvider;
+  }
+
+  get scene() {
+    return this.viewer.scene;
+  }
+
+  get globe() {
+    return this.viewer.scene.globe;
+  }
+
+  onLocationPick(callback: (location: PickedLocation) => void) {
     this.onLocationPicked = callback;
   }
 
-  async placeHouse(url: string, longitude: number, latitude: number, height = 0) {
-    const placementVersion = ++this.placementVersion;
-    const scene = this.viewer.scene;
-    this.location = Cartesian3.fromDegrees(longitude, latitude, height);
-    if (this.house) {
-      scene.primitives.remove(this.house);
-      this.house = undefined;
-    }
+  /** Screen point → geographic location, terrain-aware where supported. */
+  pickLocation(windowPosition: any): PickedLocation | undefined {
+    const { scene } = this.viewer;
+    const cartesian = scene.pickPositionSupported
+      ? scene.pickPosition(windowPosition)
+      : undefined;
+    const fallback =
+      cartesian ?? scene.camera.pickEllipsoid(windowPosition, scene.globe.ellipsoid);
+    if (!fallback) return undefined;
 
-    const isBungalow = url.includes("bungalow");
-    const modelMatrix = isBungalow ? this.makeBungalowModelMatrix() : this.makeModelMatrix();
-    const modelScale = isBungalow ? 0.05 : this.scale;
-
-    const model = await Model.fromGltfAsync({
-      url,
-      modelMatrix,
-      shadows: ShadowMode.ENABLED,
-      scale: modelScale,
-      scene,
-    });
-
-    // React Strict Mode and quick location changes can supersede a pending load.
-    if (this.destroyed || placementVersion !== this.placementVersion) {
-      model.destroy();
-      return;
-    }
-
-    this.house = model;
-    scene.primitives.add(model);
-  }
-
-  setHouseTransform(headingDeg: number, scale = this.scale) {
-    this.headingDeg = headingDeg;
-    this.scale = scale;
-    if (this.house) this.house.modelMatrix = this.makeModelMatrix();
-  }
-
-  setHouseLocation(longitude: number, latitude: number, height = 0) {
-    this.location = Cartesian3.fromDegrees(longitude, latitude, height);
-    if (this.house) this.house.modelMatrix = this.makeModelMatrix();
-  }
-
-  getHouseLocation() {
-    return this.location;
-  }
-
-  private makeModelMatrix() {
-    const hpr = new HeadingPitchRoll(
-      CesiumMath.toRadians(this.headingDeg),
-      0,
-      0
-    );
-    return Transforms.headingPitchRollToFixedFrame(this.location, hpr);
-  }
-
-  private makeBungalowModelMatrix() {
-    const hpr = new HeadingPitchRoll(
-      CesiumMath.toRadians(this.headingDeg),
-      0,
-      0
-    );
-    return Transforms.headingPitchRollToFixedFrame(this.location, hpr);
+    const carto = Cartographic.fromCartesian(fallback);
+    return {
+      latitude: CesiumMath.toDegrees(carto.latitude),
+      longitude: CesiumMath.toDegrees(carto.longitude),
+      height: Math.max(0, carto.height),
+    };
   }
 
   setDate(date: Date) {
-    this.viewer.clock.currentTime = this.toJulianDate(date);
+    this.viewer.clock.currentTime = JulianDate.fromDate(date);
   }
 
   setLiveShadow(segment?: ShadowSegment) {
@@ -193,32 +162,20 @@ export class CesiumScene {
           width: 2,
           material: Color.fromAlpha(Color.fromCssColorString("#f6c55e"), 0.35),
         },
-      })
+      }),
     );
   }
 
   tiltTo3D() {
     this.viewer.camera.setView({
-      orientation: {
-        heading: CesiumMath.toRadians(0),
-        pitch: CesiumMath.toRadians(-60),
-        roll: 0,
-      },
+      orientation: { heading: 0, pitch: CesiumMath.toRadians(-60), roll: 0 },
     });
   }
 
   tiltTo2D() {
     this.viewer.camera.setView({
-      orientation: {
-        heading: CesiumMath.toRadians(0),
-        pitch: CesiumMath.toRadians(-90),
-        roll: 0,
-      },
+      orientation: { heading: 0, pitch: CesiumMath.toRadians(-90), roll: 0 },
     });
-  }
-
-  private toJulianDate(date: Date) {
-    return JulianDate.fromDate(date);
   }
 
   private shadowPositions(segment: ShadowSegment) {
@@ -234,13 +191,8 @@ export class CesiumScene {
 
   destroy() {
     this.destroyed = true;
-    this.placementVersion += 1;
     for (const entity of this.shadowTrail) this.viewer.entities.remove(entity);
+    this.shadowTrail = [];
     this.viewer.destroy();
   }
-}
-
-function requireCesium() {
-  // eslint-free local bridge for the static import tree.
-  return { JulianDate: (globalThis as any).__CESIUM_JULIAN_DATE };
 }

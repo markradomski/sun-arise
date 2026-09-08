@@ -1,9 +1,3 @@
-export interface Location {
-  latitude: number;
-  longitude: number;
-  height: number;
-}
-
 export interface SolarPosition {
   azimuthDeg: number;
   altitudeDeg: number;
@@ -11,10 +5,6 @@ export interface SolarPosition {
   sunsetMinutes: number;
 }
 
-export interface HouseInstance {
-  latitude: number;
-  longitude: number;
-  height: number;
-  headingDeg: number;
-  scale: number;
-}
+// Location and HouseInstance moved to src/scene/types.ts as GeoPosition and
+// SceneObject — the scene is now a keyed collection rather than a single house.
+export type { GeoPosition as Location, SceneObject } from "./scene/types";

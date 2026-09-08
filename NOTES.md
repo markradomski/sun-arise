@@ -5,3 +5,7 @@
 - The MVP's click handler is intentionally a first skeleton; next iteration should use `camera.pickEllipsoid` / terrain-aware picking and convert the picked Cartesian to Cartographic.
 - The solar algorithm is intentionally lightweight and visual. For quantitative analysis, use a validated solar ephemeris and climate/irradiance datasets.
 - The next major engineering step is a real `LocationPicker` service that turns a screen tap into a lat/lon and immediately repositions the house.
+
+## Next phase
+
+See [`docs/PHASE-1.md`](docs/PHASE-1.md) — Interactive Site Sandbox. Supersedes the `LocationPicker` note above: the tap-to-place flow is folded into the `SceneObject` + `ObjectLayer` refactor described there.

@@ -22,7 +22,10 @@ export function solarPosition(
   utcOffsetHours: number
 ): SolarPosition {
   const n = dayOfYear(date);
-  const minutes = date.getUTCHours() * 60 + date.getUTCMinutes() + date.getUTCSeconds() / 60 + utcOffsetHours * 60;
+  const utcMinutes =
+    date.getUTCHours() * 60 + date.getUTCMinutes() + date.getUTCSeconds() / 60;
+  // Local civil time, used for sunrise/sunset which are reported in local minutes.
+  const minutes = utcMinutes + utcOffsetHours * 60;
   const gamma = (2 * Math.PI / 365) * (n - 1 + (minutes / 60 - 12) / 24);
 
   const eqTime =
@@ -42,7 +45,10 @@ export function solarPosition(
     0.002697 * Math.cos(3 * gamma) +
     0.00148 * Math.sin(3 * gamma);
 
-  const trueSolarMinutes = (minutes + eqTime + 4 * longitudeDeg) % 1440;
+  // NOAA builds true solar time from UTC: local_time + eqTime + 4*lng - 60*offset
+  // reduces to utcMinutes + eqTime + 4*lng. Using local `minutes` here would
+  // apply the timezone offset a second time.
+  const trueSolarMinutes = (utcMinutes + eqTime + 4 * longitudeDeg + 1440) % 1440;
   const hourAngleDeg = trueSolarMinutes / 4 < 0
     ? trueSolarMinutes / 4 + 180
     : trueSolarMinutes / 4 - 180;
