@@ -67,6 +67,20 @@ export class ObjectLayer {
     return this.models.get(id);
   }
 
+  /**
+   * Footprint radius in metres, or undefined until the model is ready —
+   * `boundingSphere` throws before the GPU upload completes.
+   */
+  getRadius(id: string): number | undefined {
+    const model = this.models.get(id);
+    if (!model?.ready) return undefined;
+    try {
+      return model.boundingSphere.radius;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async load(object: SceneObject): Promise<void> {
     const token = ++this.tokenCounter;
     this.loadTokens.set(object.id, token);

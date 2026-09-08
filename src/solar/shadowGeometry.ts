@@ -1,4 +1,5 @@
 import { solarPosition } from "./solarPosition";
+import { offsetByBearing } from "../scene/geo";
 import type { GeoPosition } from "../scene/types";
 
 /**
@@ -12,7 +13,6 @@ import type { GeoPosition } from "../scene/types";
 
 const MAX_SHADOW_LENGTH_METERS = 150;
 const SHADOW_TRAIL_INTERVAL_MINUTES = 30;
-const EARTH_RADIUS_METERS = 6_371_000;
 
 export interface ShadowSegment {
   start: GeoPosition;
@@ -32,29 +32,12 @@ export function visualShadow(
     heightMeters / Math.tan((sun.altitudeDeg * Math.PI) / 180),
     MAX_SHADOW_LENGTH_METERS,
   );
-  const bearing = ((sun.azimuthDeg + 180) * Math.PI) / 180;
-  const angularDistance = shadowLength / EARTH_RADIUS_METERS;
-  const latitude = (location.latitude * Math.PI) / 180;
-  const longitude = (location.longitude * Math.PI) / 180;
-
-  const endLatitude = Math.asin(
-    Math.sin(latitude) * Math.cos(angularDistance) +
-      Math.cos(latitude) * Math.sin(angularDistance) * Math.cos(bearing),
-  );
-  const endLongitude =
-    longitude +
-    Math.atan2(
-      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latitude),
-      Math.cos(angularDistance) - Math.sin(latitude) * Math.sin(endLatitude),
-    );
+  // The shadow falls directly away from the sun.
+  const end = offsetByBearing(location, sun.azimuthDeg + 180, shadowLength);
 
   return {
     start: { ...location, height: location.height + 0.2 },
-    end: {
-      latitude: (endLatitude * 180) / Math.PI,
-      longitude: (endLongitude * 180) / Math.PI,
-      height: location.height + 0.2,
-    },
+    end: { ...end, height: location.height + 0.2 },
   };
 }
 

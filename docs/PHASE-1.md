@@ -1,6 +1,6 @@
 # Phase 1 — Interactive Site Sandbox
 
-**Status:** steps 1–4 implemented, 5–10 proposed
+**Status:** steps 1–5 implemented, 6–10 proposed
 **Date:** 2026-09-08 (updated 2026-09-09)
 **Baseline commit:** `c1c112c`
 
@@ -10,7 +10,8 @@
 | 2. ObjectLayer reconciler | ✅ done |
 | 3. Terrain | ⚠️ done, world terrain unverified — needs an ion token (decision #2) |
 | 4. Selection / drag / rotate / scale | ⚠️ done; desktop scale still UI-only (see below) |
-| 5–10 | proposed |
+| 5. Selection overlay | ✅ done |
+| 6–10 | proposed |
 
 ---
 
@@ -327,6 +328,30 @@ Cesium has no gizmo primitives, so this is hand-rolled: a ground-clamped `Ellips
 This is the one place R3F would have been materially nicer, and it is not nice enough to justify the camera bridge.
 
 **Acceptance:** selection state is unmistakable at site and house zoom levels.
+
+#### As implemented
+
+[`src/cesium/SelectionOverlay.ts`](../src/cesium/SelectionOverlay.ts) — a ground
+ring, a spoke showing which way the object faces, and a handle dot at the ring
+edge. Cream (`#f2efe7`) rather than the sun gold, so selection chrome never
+reads as solar data.
+
+The gotcha that shaped the implementation: **Cesium does not support entity
+outlines on terrain.** An `EllipseGraphics` with `outline: true` and
+`CLAMP_TO_GROUND` silently renders nothing — no warning, no error. The ring is
+therefore a ground-clamped *polyline* built from 64 generated circle points,
+which is supported.
+
+Geometry is fed through `CallbackProperty`, so dragging updates the overlay
+without recreating entities. The overlay is refreshed from `scene.postUpdate`
+rather than the store subscription, because the model's footprint radius only
+becomes readable once the GPU upload completes — several frames after the
+object enters the store. `ObjectLayer.getRadius()` returns `undefined` until
+then and the overlay falls back to a minimum radius.
+
+Also added [`src/scene/geo.ts`](../src/scene/geo.ts) (`offsetByBearing`,
+`circlePoints`) and refactored `shadowGeometry` onto it, removing a duplicated
+copy of the same spherical trig.
 
 ---
 

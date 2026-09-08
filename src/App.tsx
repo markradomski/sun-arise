@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CesiumScene } from "./cesium/CesiumScene";
 import { DragController } from "./cesium/DragController";
 import { ObjectLayer } from "./cesium/ObjectLayer";
+import { SelectionOverlay } from "./cesium/SelectionOverlay";
 import { approxHeight, settleHeight } from "./cesium/terrain";
 import { entryForModelUrl } from "./houses/catalog";
 import { SolarClock } from "./solar/SolarClock";
@@ -28,6 +29,7 @@ export default function App() {
   const sceneRef = useRef<CesiumScene | null>(null);
   const layerRef = useRef<ObjectLayer | null>(null);
   const dragRef = useRef<DragController | null>(null);
+  const overlayRef = useRef<SelectionOverlay | null>(null);
 
   const [date, setDate] = useState(INITIAL_DATE);
   const [playing, setPlaying] = useState(false);
@@ -63,6 +65,18 @@ export default function App() {
       setDate(state.date);
       setPlaying(state.playing);
       scene.setDate(state.date);
+    });
+
+    const overlay = new SelectionOverlay(scene.viewer);
+    overlayRef.current = overlay;
+
+    // Driven per-frame rather than from the store subscription: the model's
+    // footprint radius only becomes readable once it is GPU-ready, which
+    // happens some frames after the object enters the store.
+    const stopOverlay = scene.viewer.scene.postUpdate.addEventListener(() => {
+      const state = useSolarHouseStore.getState();
+      const current = state.selectedId ? state.objects[state.selectedId] ?? null : null;
+      overlay.update(current, current ? layer.getRadius(current.id) : undefined);
     });
 
     const drag = new DragController({
@@ -126,12 +140,15 @@ export default function App() {
       disposed = true;
       unsubscribeStore();
       unsubscribeClock();
+      stopOverlay();
       drag.destroy();
+      overlay.destroy();
       layer.destroy();
       scene.destroy();
       sceneRef.current = null;
       layerRef.current = null;
       dragRef.current = null;
+      overlayRef.current = null;
     };
   }, []);
 
