@@ -69,7 +69,7 @@ export default function Controls(props: Props) {
       </section>
 
       <div className="transport">
-        <button className="play" onClick={props.onToggle}>{props.playing ? "Ⅱ" : "▶"}</button>
+        <button className={`play ${props.playing ? "playing" : ""}`} onClick={props.onToggle}>{props.playing ? "Ⅱ" : "▶"}</button>
         <button onClick={() => props.onSpeed(1)}>1×</button>
         <button onClick={() => props.onSpeed(12)}>12×</button>
         <button onClick={() => props.onSpeed(60)}>60×</button>
@@ -90,7 +90,7 @@ export default function Controls(props: Props) {
       </section>
 
       <section className="stats">
-        <div><span>AZIMUTH</span><strong>{props.solar.azimuthDeg.toFixed(0)}°</strong></div>
+        <div><span>AZIMUTH</span><strong style={{ color: "#ffd36a" }}>{props.solar.azimuthDeg.toFixed(0)}°</strong></div>
         <div><span>SUNRISE</span><strong>{formatClockMinutes(props.solar.sunriseMinutes)}</strong></div>
         <div><span>SUNSET</span><strong>{formatClockMinutes(props.solar.sunsetMinutes)}</strong></div>
       </section>
