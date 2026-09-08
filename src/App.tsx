@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CesiumScene } from "./cesium/CesiumScene";
+import type { ShadowSegment } from "./cesium/CesiumScene";
 import { HouseManager } from "./houses/HouseManager";
 import { SolarClock } from "./solar/SolarClock";
 import { solarPosition } from "./solar/solarPosition";
@@ -7,6 +8,55 @@ import Controls from "./components/Controls";
 
 const INITIAL_DATE = new Date();
 INITIAL_DATE.setHours(12, 0, 0, 0);
+const HOUSE_HEIGHT_METERS = 8;
+const MAX_SHADOW_LENGTH_METERS = 150;
+const SHADOW_TRAIL_INTERVAL_MINUTES = 30;
+const EARTH_RADIUS_METERS = 6_371_000;
+
+function visualShadow(
+  date: Date,
+  location: { latitude: number; longitude: number; height: number }
+): ShadowSegment | undefined {
+  const sun = solarPosition(date, location.latitude, location.longitude, 10);
+  if (sun.altitudeDeg <= 0) return undefined;
+
+  const shadowLength = Math.min(
+    HOUSE_HEIGHT_METERS / Math.tan(sun.altitudeDeg * Math.PI / 180),
+    MAX_SHADOW_LENGTH_METERS,
+  );
+  const bearing = (sun.azimuthDeg + 180) * Math.PI / 180;
+  const angularDistance = shadowLength / EARTH_RADIUS_METERS;
+  const latitude = location.latitude * Math.PI / 180;
+  const longitude = location.longitude * Math.PI / 180;
+  const endLatitude = Math.asin(
+    Math.sin(latitude) * Math.cos(angularDistance) +
+      Math.cos(latitude) * Math.sin(angularDistance) * Math.cos(bearing),
+  );
+  const endLongitude = longitude + Math.atan2(
+    Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latitude),
+    Math.cos(angularDistance) - Math.sin(latitude) * Math.sin(endLatitude),
+  );
+
+  return {
+    start: { ...location, height: location.height + 0.2 },
+    end: {
+      latitude: endLatitude * 180 / Math.PI,
+      longitude: endLongitude * 180 / Math.PI,
+      height: location.height + 0.2,
+    },
+  };
+}
+
+function dailyShadowTrail(
+  date: Date,
+  location: { latitude: number; longitude: number; height: number }
+) {
+  return Array.from({ length: 1440 / SHADOW_TRAIL_INTERVAL_MINUTES }, (_, index) => {
+    const sample = new Date(date);
+    sample.setHours(0, index * SHADOW_TRAIL_INTERVAL_MINUTES, 0, 0);
+    return visualShadow(sample, location);
+  }).filter((segment): segment is ShadowSegment => segment !== undefined);
+}
 
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -51,6 +101,15 @@ export default function App() {
   }, []);
 
   const solar = solarPosition(date, location.latitude, location.longitude, 10);
+  const selectedDay = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+
+  useEffect(() => {
+    sceneRef.current?.setLiveShadow(visualShadow(date, location));
+  }, [date, location]);
+
+  useEffect(() => {
+    sceneRef.current?.setShadowTrail(dailyShadowTrail(date, location));
+  }, [selectedDay, location]);
 
   const handlePlace = () => {
     houseRef.current?.placeDefault(location).catch(console.error);
@@ -96,6 +155,7 @@ export default function App() {
         onToggleTilt={handleToggleTilt}
       />
       <div className="north">N</div>
+      <div className="shadow-legend"><span />Live shadow <small>30 min trail</small></div>
       <div className="location-pill">Sydney · MVP starting location</div>
     </main>
   );

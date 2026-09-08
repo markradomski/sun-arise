@@ -1,7 +1,9 @@
 import {
   Cartesian3,
   Color,
+  ConstantProperty,
   EllipsoidTerrainProvider,
+  Entity,
   Ion,
   JulianDate,
   ScreenSpaceEventType,
@@ -15,9 +17,18 @@ import {
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
+export interface ShadowSegment {
+  start: { latitude: number; longitude: number; height: number };
+  end: { latitude: number; longitude: number; height: number };
+}
+
 export class CesiumScene {
   readonly viewer: Viewer;
   private house?: Model;
+  private liveShadow?: Entity;
+  private shadowTrail: Entity[] = [];
+  private placementVersion = 0;
+  private destroyed = false;
   private location = Cartesian3.fromDegrees(151.2093, -33.8688, 0);
   private headingDeg = 0;
   private scale = 1;
@@ -83,9 +94,11 @@ export class CesiumScene {
   }
 
   async placeHouse(url: string, longitude: number, latitude: number, height = 0) {
+    const placementVersion = ++this.placementVersion;
+    const scene = this.viewer.scene;
     this.location = Cartesian3.fromDegrees(longitude, latitude, height);
     if (this.house) {
-      this.viewer.scene.primitives.remove(this.house);
+      scene.primitives.remove(this.house);
       this.house = undefined;
     }
 
@@ -93,14 +106,22 @@ export class CesiumScene {
     const modelMatrix = isBungalow ? this.makeBungalowModelMatrix() : this.makeModelMatrix();
     const modelScale = isBungalow ? 0.05 : this.scale;
 
-    this.house = await Model.fromGltfAsync({
+    const model = await Model.fromGltfAsync({
       url,
       modelMatrix,
       shadows: ShadowMode.ENABLED,
       scale: modelScale,
-      scene: this.viewer.scene,
+      scene,
     });
-    this.viewer.scene.primitives.add(this.house);
+
+    // React Strict Mode and quick location changes can supersede a pending load.
+    if (this.destroyed || placementVersion !== this.placementVersion) {
+      model.destroy();
+      return;
+    }
+
+    this.house = model;
+    scene.primitives.add(model);
   }
 
   setHouseTransform(headingDeg: number, scale = this.scale) {
@@ -140,6 +161,42 @@ export class CesiumScene {
     this.viewer.clock.currentTime = this.toJulianDate(date);
   }
 
+  setLiveShadow(segment?: ShadowSegment) {
+    if (!segment) {
+      if (this.liveShadow) this.liveShadow.show = false;
+      return;
+    }
+
+    const positions = this.shadowPositions(segment);
+    if (!this.liveShadow) {
+      this.liveShadow = this.viewer.entities.add({
+        polyline: {
+          positions,
+          width: 4,
+          material: Color.fromCssColorString("#ffd36a"),
+        },
+      });
+      return;
+    }
+
+    this.liveShadow.show = true;
+    const polyline = this.liveShadow.polyline;
+    if (polyline) polyline.positions = new ConstantProperty(positions);
+  }
+
+  setShadowTrail(segments: ShadowSegment[]) {
+    for (const entity of this.shadowTrail) this.viewer.entities.remove(entity);
+    this.shadowTrail = segments.map((segment) =>
+      this.viewer.entities.add({
+        polyline: {
+          positions: this.shadowPositions(segment),
+          width: 2,
+          material: Color.fromAlpha(Color.fromCssColorString("#f6c55e"), 0.35),
+        },
+      })
+    );
+  }
+
   tiltTo3D() {
     this.viewer.camera.setView({
       orientation: {
@@ -164,7 +221,21 @@ export class CesiumScene {
     return JulianDate.fromDate(date);
   }
 
+  private shadowPositions(segment: ShadowSegment) {
+    return Cartesian3.fromDegreesArrayHeights([
+      segment.start.longitude,
+      segment.start.latitude,
+      segment.start.height,
+      segment.end.longitude,
+      segment.end.latitude,
+      segment.end.height,
+    ]);
+  }
+
   destroy() {
+    this.destroyed = true;
+    this.placementVersion += 1;
+    for (const entity of this.shadowTrail) this.viewer.entities.remove(entity);
     this.viewer.destroy();
   }
 }
