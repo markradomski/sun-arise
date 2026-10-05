@@ -1,8 +1,6 @@
 import {
   Cartesian3,
   Color,
-  ConstantProperty,
-  Entity,
   Ion,
   JulianDate,
   Math as CesiumMath,
@@ -12,11 +10,6 @@ import {
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import { createTerrain } from "./terrain";
-
-export interface ShadowSegment {
-  start: { latitude: number; longitude: number; height: number };
-  end: { latitude: number; longitude: number; height: number };
-}
 
 export interface PickedLocation {
   latitude: number;
@@ -32,8 +25,6 @@ export interface PickedLocation {
  */
 export class CesiumScene {
   readonly viewer: Viewer;
-  private liveShadow?: Entity;
-  private shadowTrail: Entity[] = [];
   private destroyed = false;
   private terrainProvider?: TerrainProvider;
 
@@ -104,42 +95,6 @@ export class CesiumScene {
     this.viewer.clock.currentTime = JulianDate.fromDate(date);
   }
 
-  setLiveShadow(segment?: ShadowSegment) {
-    if (!segment) {
-      if (this.liveShadow) this.liveShadow.show = false;
-      return;
-    }
-
-    const positions = this.shadowPositions(segment);
-    if (!this.liveShadow) {
-      this.liveShadow = this.viewer.entities.add({
-        polyline: {
-          positions,
-          width: 4,
-          material: Color.fromCssColorString("#ffd36a"),
-        },
-      });
-      return;
-    }
-
-    this.liveShadow.show = true;
-    const polyline = this.liveShadow.polyline;
-    if (polyline) polyline.positions = new ConstantProperty(positions);
-  }
-
-  setShadowTrail(segments: ShadowSegment[]) {
-    for (const entity of this.shadowTrail) this.viewer.entities.remove(entity);
-    this.shadowTrail = segments.map((segment) =>
-      this.viewer.entities.add({
-        polyline: {
-          positions: this.shadowPositions(segment),
-          width: 2,
-          material: Color.fromAlpha(Color.fromCssColorString("#f6c55e"), 0.35),
-        },
-      }),
-    );
-  }
-
   tiltTo3D() {
     this.viewer.camera.setView({
       orientation: { heading: 0, pitch: CesiumMath.toRadians(-60), roll: 0 },
@@ -152,21 +107,8 @@ export class CesiumScene {
     });
   }
 
-  private shadowPositions(segment: ShadowSegment) {
-    return Cartesian3.fromDegreesArrayHeights([
-      segment.start.longitude,
-      segment.start.latitude,
-      segment.start.height,
-      segment.end.longitude,
-      segment.end.latitude,
-      segment.end.height,
-    ]);
-  }
-
   destroy() {
     this.destroyed = true;
-    for (const entity of this.shadowTrail) this.viewer.entities.remove(entity);
-    this.shadowTrail = [];
     this.viewer.destroy();
   }
 }

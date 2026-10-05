@@ -190,15 +190,6 @@ input[type="date"]:focus {
   border: 1px solid rgba(255,255,255,.12); border-radius: 50%;
   background: rgba(10,12,15,.65); backdrop-filter: blur(10px); font-weight: 700;
 }
-.shadow-legend {
-  position: absolute; z-index: 5; right: 24px; bottom: 20px;
-  display: flex; align-items: center; gap: 7px;
-  padding: 9px 12px; border-radius: 999px;
-  background: rgba(10,12,15,.7); border: 1px solid rgba(255,255,255,.1);
-  color: #e6e1d4; font-size: 12px; backdrop-filter: blur(12px);
-}
-.shadow-legend span { width: 18px; height: 3px; border-radius: 999px; background: #ffd36a; }
-.shadow-legend small { color: #9da2aa; font-size: inherit; }
 .location-pill {
   position: absolute; z-index: 5; left: 50%; bottom: 20px; transform: translateX(-50%);
   padding: 9px 14px; border-radius: 999px;
@@ -236,5 +227,4 @@ input[type="date"]:focus {
   section { margin-top: 13px; }
   .hint { display: none; }
   .location-pill { display: none; }
-  .shadow-legend { right: 10px; bottom: 10px; font-size: 10px; }
 }

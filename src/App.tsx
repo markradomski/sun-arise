@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CameraController } from "./cesium/CameraController";
 import { CesiumScene } from "./cesium/CesiumScene";
 import { DragController } from "./cesium/DragController";
 import { ObjectLayer } from "./cesium/ObjectLayer";
 import { SelectionOverlay } from "./cesium/SelectionOverlay";
 import { approxHeight, settleHeight } from "./cesium/terrain";
-import { entryForModelUrl } from "./houses/catalog";
 import { SolarClock } from "./solar/SolarClock";
 import { solarPosition } from "./solar/solarPosition";
-import { dailyShadowTrail, visualShadow } from "./solar/shadowGeometry";
 import {
   selectOrderedObjects,
   selectSelectedObject,
@@ -30,6 +29,7 @@ export default function App() {
   const layerRef = useRef<ObjectLayer | null>(null);
   const dragRef = useRef<DragController | null>(null);
   const overlayRef = useRef<SelectionOverlay | null>(null);
+  const cameraRef = useRef<CameraController | null>(null);
 
   const [date, setDate] = useState(INITIAL_DATE);
   const [playing, setPlaying] = useState(false);
@@ -77,6 +77,24 @@ export default function App() {
       const state = useSolarHouseStore.getState();
       const current = state.selectedId ? state.objects[state.selectedId] ?? null : null;
       overlay.update(current, current ? layer.getRadius(current.id) : undefined);
+    });
+
+    const camera = new CameraController(scene.viewer);
+    cameraRef.current = camera;
+
+    // Open at the house rather than in orbit. The model's position is only
+    // meaningful once it has loaded and settled onto terrain, so wait for
+    // readiness and then set the view directly — no fly-from-space.
+    let framed = false;
+    const stopInitialFraming = scene.viewer.scene.postRender.addEventListener(() => {
+      if (framed || disposed) return;
+      const state = useSolarHouseStore.getState();
+      const first = state.order[0] ? state.objects[state.order[0]] : undefined;
+      if (!first || layer.getRadius(first.id) === undefined) return;
+
+      camera.frameSite(first);
+      framed = true;
+      stopInitialFraming();
     });
 
     const drag = new DragController({
@@ -141,6 +159,7 @@ export default function App() {
       unsubscribeStore();
       unsubscribeClock();
       stopOverlay();
+      stopInitialFraming();
       drag.destroy();
       overlay.destroy();
       layer.destroy();
@@ -152,30 +171,17 @@ export default function App() {
     };
   }, []);
 
-  const shadowOrigin = selected?.position ?? INITIAL_SITE;
-  const shadowHeight = selected
-    ? entryForModelUrl(selected.modelUrl)?.heightMeters ?? 8
-    : 8;
+  // Shadows are rendered by Cesium's shadow map from the real model geometry;
+  // the sun-ray polylines that used to be drawn here were removed because they
+  // did not convey sunlight vs shade any better than the cast shadow itself.
+  const sunOrigin = selected?.position ?? INITIAL_SITE;
 
   const solar = solarPosition(
     date,
-    shadowOrigin.latitude,
-    shadowOrigin.longitude,
+    sunOrigin.latitude,
+    sunOrigin.longitude,
     UTC_OFFSET_HOURS,
   );
-  const selectedDay = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-
-  useEffect(() => {
-    sceneRef.current?.setLiveShadow(
-      visualShadow(date, shadowOrigin, shadowHeight, UTC_OFFSET_HOURS),
-    );
-  }, [date, shadowOrigin, shadowHeight]);
-
-  useEffect(() => {
-    sceneRef.current?.setShadowTrail(
-      dailyShadowTrail(date, shadowOrigin, shadowHeight, UTC_OFFSET_HOURS),
-    );
-  }, [selectedDay, shadowOrigin, shadowHeight]);
 
   const handlePlace = () => {
     const scene = sceneRef.current;
@@ -219,10 +225,6 @@ export default function App() {
         onToggleTilt={handleToggleTilt}
       />
       <div className="north">N</div>
-      <div className="shadow-legend">
-        <span />
-        Live shadow <small>30 min trail</small>
-      </div>
       <div className="location-pill">Sydney · MVP starting location</div>
     </main>
   );

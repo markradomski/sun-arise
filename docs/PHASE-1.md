@@ -11,7 +11,8 @@
 | 3. Terrain | ⚠️ done, world terrain unverified — needs an ion token (decision #2) |
 | 4. Selection / drag / rotate / scale | ⚠️ done; desktop scale still UI-only (see below) |
 | 5. Selection overlay | ✅ done |
-| 6–10 | proposed |
+| 6. CameraController | ⚠️ partial — SITE view on load; named-state transitions still to do |
+| 7–10 | proposed |
 
 ---
 
@@ -379,6 +380,41 @@ The tap flow becomes: pick location → `flyTo('SITE')` → on arrival, drop hou
 `tiltTo3D()` and `tiltTo2D()` disappear — they become two of the named states.
 
 **Acceptance:** orbit → site transition reads as one continuous move, not a jump cut.
+
+#### Partially implemented
+
+[`src/cesium/CameraController.ts`](../src/cesium/CameraController.ts) currently
+provides `frameSite()` only. The app **opens** at the house rather than in
+orbit — range 80 m, pitch −50°, heading 20°, set directly with no
+fly-from-space, so the model is visible the moment the app is usable.
+
+Two mechanics worth keeping:
+
+- `camera.lookAt()` locks the camera to the target's reference frame; it must be
+  followed by `lookAtTransform(Matrix4.IDENTITY)` or the user's own pan and zoom
+  fight the lock.
+- Initial framing is driven from `scene.postRender` and waits for
+  `layer.getRadius()` to return a value, because the model's position is not
+  meaningful until it has loaded and settled. The listener removes itself once
+  it has framed.
+
+Pitch is deliberately −50° and not −90°: an exactly vertical camera makes the
+pick ray degenerate and breaks selection and dragging entirely (see step 4).
+
+Still to do: the ORBIT / REGION / SITE / HOUSE named states and animated
+transitions between them.
+
+### Sun-ray polylines removed
+
+The gold `visualShadow` / `dailyShadowTrail` polylines are gone, along with
+`src/solar/shadowGeometry.ts` and the shadow legend. They did not convey
+sunlight vs shade any better than Cesium's shadow map does from the real model
+geometry, and they cluttered the close-up site view.
+
+The solar engine itself is untouched — sun position, altitude, azimuth and
+sunrise/sunset still drive the UI, and the real cast shadow still renders. If a
+sun-path visualisation returns in Phase 3 it should be a ground overlay, not
+rays from the model.
 
 ---
 
