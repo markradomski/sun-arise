@@ -7,6 +7,7 @@ import {
 } from "cesium";
 import type { SceneObject } from "../scene/types";
 import { circlePoints, offsetByBearing } from "../scene/geo";
+import { footprintRadius } from "../houses/catalog";
 
 /**
  * Visual selection state: a ring on the ground beneath the selected object,
@@ -22,8 +23,9 @@ import { circlePoints, offsetByBearing } from "../scene/geo";
  */
 
 const RING_COLOR = Color.fromCssColorString("#f2efe7");
-const MIN_RADIUS_METERS = 6;
-const RADIUS_PADDING = 1.35;
+const MIN_RADIUS_METERS = 4;
+/** Just enough clearance to read as a handle, not as a site boundary. */
+const RADIUS_PADDING = 1.2;
 
 export class SelectionOverlay {
   private ring;
@@ -67,15 +69,14 @@ export class SelectionOverlay {
     });
   }
 
-  /**
-   * @param radiusMeters Footprint radius of the selected model, when known.
-   */
-  update(object: SceneObject | null, radiusMeters?: number) {
+  update(object: SceneObject | null) {
     this.current = object;
-    this.radius = Math.max(
-      MIN_RADIUS_METERS,
-      (radiusMeters ?? MIN_RADIUS_METERS) * RADIUS_PADDING,
-    );
+    this.radius = object
+      ? Math.max(
+          MIN_RADIUS_METERS,
+          footprintRadius(object.modelUrl, object.scale) * RADIUS_PADDING,
+        )
+      : MIN_RADIUS_METERS;
 
     const show = object !== null;
     this.ring.show = show;
