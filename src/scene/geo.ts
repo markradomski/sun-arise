@@ -43,6 +43,18 @@ export function offsetByBearing(
   return { latitude: endLat * RAD, longitude: endLng * RAD };
 }
 
+/** Metres east and north from `from` to `to`, for small separations. */
+export function eastNorthOffset(
+  from: LatLng,
+  to: LatLng,
+): { east: number; north: number } {
+  const meanLat = ((from.latitude + to.latitude) / 2) * DEG;
+  return {
+    east: (to.longitude - from.longitude) * DEG * EARTH_RADIUS_METERS * Math.cos(meanLat),
+    north: (to.latitude - from.latitude) * DEG * EARTH_RADIUS_METERS,
+  };
+}
+
 /** Evenly spaced points on a circle of `radiusMeters` around `origin`. */
 export function circlePoints(
   origin: LatLng,

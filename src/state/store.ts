@@ -21,6 +21,10 @@ export interface SolarHouseState {
   terrainProviderName: string;
   /** Footprint analysis per object; absent until terrain has been sampled. */
   terrain: Record<string, FootprintTerrain>;
+  /** Exterior test point for direct-sun analysis. */
+  probe: GeoPosition | null;
+  /** The next ground click places the probe rather than a house. */
+  probeArmed: boolean;
 
   addObject(object: Omit<SceneObject, "id">): string;
   addHouse(position: GeoPosition, slug?: string): string;
@@ -31,6 +35,8 @@ export interface SolarHouseState {
   setSite(site: { latitude: number; longitude: number } | null): void;
   setTerrainStatus(status: TerrainStatus, providerName?: string): void;
   setObjectTerrain(id: string, terrain: FootprintTerrain | null): void;
+  setProbe(probe: GeoPosition | null): void;
+  armProbe(armed: boolean): void;
 }
 
 export const useSolarHouseStore = create<SolarHouseState>((set) => ({
@@ -43,6 +49,8 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   terrainStatus: "LOADING",
   terrainProviderName: "",
   terrain: {},
+  probe: null,
+  probeArmed: false,
 
   addObject(object) {
     const id = nextObjectId(object.type);
@@ -129,6 +137,14 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
       terrainStatus: status,
       terrainProviderName: providerName ?? state.terrainProviderName,
     }));
+  },
+
+  setProbe(probe) {
+    set({ probe });
+  },
+
+  armProbe(armed) {
+    set({ probeArmed: armed });
   },
 
   setObjectTerrain(id, terrain) {

@@ -8,11 +8,14 @@ import { CesiumScene } from "./cesium/CesiumScene";
 import { DragController } from "./cesium/DragController";
 import { ObjectLayer } from "./cesium/ObjectLayer";
 import { SelectionOverlay } from "./cesium/SelectionOverlay";
-import { loadedHeight } from "./cesium/terrain";
+import { loadedHeight, sampleElevations } from "./cesium/terrain";
+import { ProbeMarker } from "./cesium/ProbeMarker";
 import { TerrainSampler } from "./cesium/TerrainSampler";
 import { SolarClock } from "./solar/SolarClock";
 import { solarPosition } from "./solar/solarPosition";
 import { civilZone, withCivilDate, withCivilMinutes } from "./solar/timezone";
+import { pointExposure } from "./solar/exposure";
+import { occluderFor } from "./scene/occluders";
 import { terrainPolicyFor, type GeoPosition } from "./scene/types";
 import { DEFAULT_SITE } from "./scene/site";
 import {
@@ -22,6 +25,7 @@ import {
 } from "./state/store";
 import Controls from "./components/Controls";
 import TerrainDiagnostics from "./components/TerrainDiagnostics";
+import ExposurePanel from "./components/ExposurePanel";
 
 const INITIAL_DATE = new Date();
 INITIAL_DATE.setHours(12, 0, 0, 0);
@@ -44,6 +48,9 @@ export default function App() {
 
   const selected = useSolarHouseStore(selectSelectedObject);
   const site = useSolarHouseStore((s) => s.site);
+  const probe = useSolarHouseStore((s) => s.probe);
+  const probeArmed = useSolarHouseStore((s) => s.probeArmed);
+  const objects = useSolarHouseStore((s) => s.objects);
   const addHouse = useSolarHouseStore((s) => s.addHouse);
   const updateObject = useSolarHouseStore((s) => s.updateObject);
 
@@ -147,6 +154,31 @@ export default function App() {
       }
     }
 
+    /** The probe must sit on the real surface, not the ellipsoid. */
+    async function settleProbe(location: GeoPosition) {
+      const provider = scene.getTerrainProvider();
+      const store = useSolarHouseStore.getState();
+      if (!provider || store.terrainStatus !== "READY" || disposed) return;
+
+      const [height] = await sampleElevations(provider, [location]);
+      if (disposed || height === undefined) return;
+
+      const current = useSolarHouseStore.getState().probe;
+      if (!current) return;
+      if (
+        current.latitude !== location.latitude ||
+        current.longitude !== location.longitude
+      ) {
+        return;
+      }
+      useSolarHouseStore.getState().setProbe({ ...location, height });
+    }
+
+    const probeMarker = new ProbeMarker(scene.viewer);
+    const stopProbe = scene.viewer.scene.postUpdate.addEventListener(() => {
+      probeMarker.update(useSolarHouseStore.getState().probe);
+    });
+
     settleRef.current = settlePlacement;
 
     const drag = new DragController({
@@ -155,6 +187,14 @@ export default function App() {
       getTerrainStatus: () => useSolarHouseStore.getState().terrainStatus,
       onGroundClick: (location) => {
         const store = useSolarHouseStore.getState();
+
+        if (store.probeArmed) {
+          store.setProbe(location);
+          store.armProbe(false);
+          void settleProbe(location);
+          return;
+        }
+
         store.setSite({ latitude: location.latitude, longitude: location.longitude });
 
         // Move the selected house if there is one, otherwise drop a new one.
@@ -199,6 +239,8 @@ export default function App() {
       unsubscribeStore();
       unsubscribeClock();
       stopOverlay();
+      stopProbe();
+      probeMarker.destroy();
       stopInitialFraming();
       drag.destroy();
       sampler.dispose();
@@ -234,6 +276,19 @@ export default function App() {
     sunOrigin.longitude,
     zone.offsetHours,
   );
+
+  const civilDay = `${zone.timeZone}:${selectedDayKey(date, zone.offsetHours)}`;
+  const exposure = useMemo(() => {
+    if (!probe) return null;
+    const occluders = Object.values(objects)
+      .filter((object) => object.type === "house")
+      .map(occluderFor);
+    return pointExposure(probe, occluders, date, {
+      utcOffsetHours: zone.offsetHours,
+    });
+    // Keyed on the civil date rather than `date` itself: this is a whole-day
+    // result, and the clock ticks every frame while the simulation plays.
+  }, [probe, objects, civilDay, zone.offsetHours]);
 
   const handleCameraMode = (mode: CameraMode) => {
     setCameraMode(mode);
@@ -289,9 +344,25 @@ export default function App() {
         onPlace={handlePlace}
         onCameraMode={handleCameraMode}
       />
+      <ExposurePanel
+        exposure={exposure}
+        zone={zone}
+        armed={probeArmed}
+        onArm={() => useSolarHouseStore.getState().armProbe(true)}
+        onClear={() => {
+          useSolarHouseStore.getState().setProbe(null);
+          useSolarHouseStore.getState().armProbe(false);
+        }}
+      />
       <TerrainDiagnostics />
       <div className="north">N</div>
       <div className="location-pill">The Domain · Sydney</div>
     </main>
   );
+}
+
+/** Civil-day key so whole-day analysis does not rerun on every clock tick. */
+function selectedDayKey(date: Date, utcOffsetHours: number): string {
+  const shifted = new Date(date.getTime() + utcOffsetHours * 3_600_000);
+  return shifted.toISOString().slice(0, 10);
 }
