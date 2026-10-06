@@ -57,6 +57,16 @@ export class CesiumScene {
     // through it. Without this, dragging places objects underground.
     scene.globe.depthTestAgainstTerrain = true;
 
+    // Cesium's shadow map defaults to a 5 km range. Across a 15 m house that
+    // leaves so little depth precision that the building self-shadows and
+    // renders almost black — which looks exactly like a broken model. Tightening
+    // the range to site scale is what makes the cast shadow usable.
+    this.viewer.shadowMap.maximumDistance = 600;
+    this.viewer.shadowMap.size = 2048;
+    this.viewer.shadowMap.softShadows = true;
+    this.viewer.shadowMap.darkness = 0.38;
+    this.viewer.shadowMap.normalOffset = true;
+
     this.viewer.camera.setView({
       destination: Cartesian3.fromDegrees(151.2093, -33.8688, 2_000_000),
     });

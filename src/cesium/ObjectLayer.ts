@@ -1,4 +1,5 @@
 import {
+  Axis,
   Cartesian3,
   HeadingPitchRoll,
   Math as CesiumMath,
@@ -68,17 +69,12 @@ export class ObjectLayer {
   }
 
   /**
-   * Footprint radius in metres, or undefined until the model is ready —
-   * `boundingSphere` throws before the GPU upload completes.
+   * True once the model has finished its GPU upload. Until then its transform
+   * is in place but `boundingSphere` throws and the object is not yet drawable,
+   * so anything that frames or measures it must wait.
    */
-  getRadius(id: string): number | undefined {
-    const model = this.models.get(id);
-    if (!model?.ready) return undefined;
-    try {
-      return model.boundingSphere.radius;
-    } catch {
-      return undefined;
-    }
+  isReady(id: string): boolean {
+    return this.models.get(id)?.ready === true;
   }
 
   private async load(object: SceneObject): Promise<void> {
@@ -93,6 +89,12 @@ export class ObjectLayer {
         scale: scaleFor(object),
         shadows: ShadowMode.ENABLED,
         scene: this.scene,
+        // Stated explicitly rather than relying on the default. Models are
+        // authored to the glTF standard (+Y up, -Z forward); Cesium rotates
+        // that into its own Z-up ENU frame, which puts -Z at north for
+        // heading 0. Leaving this implicit left the house lying on its back.
+        upAxis: Axis.Y,
+        forwardAxis: Axis.Z,
       });
     } catch (error) {
       console.error(`[ObjectLayer] Failed to load ${object.modelUrl}`, error);
