@@ -1,6 +1,7 @@
 import {
   CallbackProperty,
   Cartesian3,
+  Cartographic,
   Color,
   HeightReference,
   type Viewer,
@@ -23,6 +24,7 @@ import { footprintRadius } from "../houses/catalog";
  */
 
 const RING_COLOR = Color.fromCssColorString("#f2efe7");
+const OUTLINE_COLOR = Color.fromCssColorString("#05070a");
 const MIN_RADIUS_METERS = 4;
 /** Just enough clearance to read as a handle, not as a site boundary. */
 const RADIUS_PADDING = 1.2;
@@ -33,6 +35,7 @@ export class SelectionOverlay {
   private handle;
   private current: SceneObject | null = null;
   private radius = MIN_RADIUS_METERS;
+  private latched = false;
 
   constructor(private viewer: Viewer) {
     this.ring = viewer.entities.add({
@@ -59,10 +62,13 @@ export class SelectionOverlay {
       show: false,
       position: new CallbackProperty(() => this.handlePosition(), false) as any,
       point: {
-        pixelSize: 10,
+        pixelSize: new CallbackProperty(() => (this.latched ? 14 : 10), false),
         color: RING_COLOR,
-        outlineColor: Color.fromCssColorString("#05070a"),
-        outlineWidth: 2,
+        outlineColor: new CallbackProperty(
+          () => (this.latched ? RING_COLOR.withAlpha(0.45) : OUTLINE_COLOR),
+          false,
+        ) as any,
+        outlineWidth: new CallbackProperty(() => (this.latched ? 6 : 2), false),
         heightReference: HeightReference.CLAMP_TO_GROUND,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
@@ -106,6 +112,31 @@ export class SelectionOverlay {
     ];
   }
 
+  /** World position of the heading handle, for screen-space hit testing. */
+  handleWorldPosition(): Cartesian3 | undefined {
+    return this.handlePosition();
+  }
+
+  centreWorldPosition(): Cartesian3 | undefined {
+    const object = this.current;
+    if (!object) return undefined;
+    return Cartesian3.fromDegrees(
+      object.position.longitude,
+      object.position.latitude,
+      object.position.height,
+    );
+  }
+
+  setLatched(latched: boolean) {
+    this.latched = latched;
+  }
+
+  /**
+   * The handle is drawn clamped to terrain, so its position must carry the
+   * ground height. Built at sea level it still renders in the right place but
+   * projects to a screen point far from the drawn dot, which puts hit testing
+   * somewhere the user cannot see.
+   */
   private handlePosition(): Cartesian3 | undefined {
     const object = this.current;
     if (!object) return undefined;
@@ -114,7 +145,14 @@ export class SelectionOverlay {
       object.rotation.heading,
       this.radius,
     );
-    return Cartesian3.fromDegrees(edge.longitude, edge.latitude);
+    const ground = this.viewer.scene.globe.getHeight(
+      Cartographic.fromDegrees(edge.longitude, edge.latitude),
+    );
+    return Cartesian3.fromDegrees(
+      edge.longitude,
+      edge.latitude,
+      ground ?? object.position.height,
+    );
   }
 
   destroy() {

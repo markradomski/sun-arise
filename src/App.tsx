@@ -67,8 +67,13 @@ export default function App() {
     let disposed = false;
 
     // Store is the source of truth; the layer reconciles against it.
+    let lastSelectedId = useSolarHouseStore.getState().selectedId;
     const unsubscribeStore = useSolarHouseStore.subscribe((state) => {
       layer.sync(selectOrderedObjects(state)).catch(console.error);
+      if (state.selectedId !== lastSelectedId) {
+        lastSelectedId = state.selectedId;
+        dragRef.current?.onSelectionChanged(state.selectedId);
+      }
     });
 
     const unsubscribeClock = clock.subscribe((state) => {
@@ -146,6 +151,7 @@ export default function App() {
 
     const drag = new DragController({
       scene: scene.scene,
+      overlay,
       getTerrainStatus: () => useSolarHouseStore.getState().terrainStatus,
       onGroundClick: (location) => {
         const store = useSolarHouseStore.getState();

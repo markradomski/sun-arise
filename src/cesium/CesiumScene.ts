@@ -32,6 +32,10 @@ export class CesiumScene {
       sceneModePicker: false,
       navigationHelpButton: false,
       fullscreenButton: false,
+      // Selection is drawn by SelectionOverlay; Cesium's own info bar and
+      // indicator would duplicate it and surface internal entity ids.
+      infoBox: false,
+      selectionIndicator: false,
       shadows: true,
       terrainShadows: ShadowMode.RECEIVE_ONLY,
       scene3DOnly: true,
