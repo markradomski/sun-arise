@@ -17,7 +17,7 @@ import { civilZone, withCivilDate, withCivilMinutes } from "./solar/timezone";
 import { pointExposure, sunTimeline } from "./solar/exposure";
 import { exposureField, type ExposureField } from "./solar/exposureField";
 import { DEFAULT_GRID, groundGrid, type Grid } from "./scene/grid";
-import { FieldOverlay } from "./cesium/FieldOverlay";
+import { HeatmapOverlay } from "./cesium/HeatmapOverlay";
 import { occluderFor } from "./scene/occluders";
 import { terrainPolicyFor, type GeoPosition } from "./scene/types";
 import { DEFAULT_SITE } from "./scene/site";
@@ -43,7 +43,7 @@ export default function App() {
   const overlayRef = useRef<SelectionOverlay | null>(null);
   const cameraRef = useRef<CameraController | null>(null);
   const settleRef = useRef<((id: string) => Promise<void>) | null>(null);
-  const fieldOverlayRef = useRef<FieldOverlay | null>(null);
+  const fieldOverlayRef = useRef<HeatmapOverlay | null>(null);
 
   const [date, setDate] = useState(INITIAL_DATE);
   const [playing, setPlaying] = useState(false);
@@ -56,7 +56,9 @@ export default function App() {
   const probeArmed = useSolarHouseStore((s) => s.probeArmed);
   const objects = useSolarHouseStore((s) => s.objects);
   const fieldEnabled = useSolarHouseStore((s) => s.fieldEnabled);
-  const [field, setField] = useState<{ grid: Grid; result: ExposureField } | null>(null);
+  const [field, setField] = useState<
+    { grid: Grid; result: ExposureField; overlayMs: number } | null
+  >(null);
   const addHouse = useSolarHouseStore((s) => s.addHouse);
   const updateObject = useSolarHouseStore((s) => s.updateObject);
 
@@ -180,7 +182,7 @@ export default function App() {
       useSolarHouseStore.getState().setProbe({ ...location, height });
     }
 
-    const fieldOverlay = new FieldOverlay(scene.scene);
+    const fieldOverlay = new HeatmapOverlay(scene.viewer);
     fieldOverlayRef.current = fieldOverlay;
 
     const probeMarker = new ProbeMarker(scene.viewer);
@@ -352,8 +354,9 @@ export default function App() {
       );
       if (cancelled) return;
 
-      overlay.update(grid, result);
-      setField({ grid, result });
+      await overlay.update(grid, result);
+      if (cancelled) return;
+      setField({ grid, result, overlayMs: overlay.lastUpdateMs });
     })().catch(console.error);
 
     return () => {
@@ -432,6 +435,7 @@ export default function App() {
             minMinutes: field.result.minMinutes,
             maxMinutes: field.result.maxMinutes,
             computeMs: field.result.computeMs,
+            overlayMs: field.overlayMs,
           }
         }
         onArm={() => useSolarHouseStore.getState().armProbe(true)}

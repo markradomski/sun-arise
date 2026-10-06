@@ -1,6 +1,7 @@
 import type { PointExposure } from "../solar/exposure";
 import type { CivilZone } from "../solar/timezone";
 import { civilParts } from "../solar/timezone";
+import { LEGEND_BANDS } from "../solar/exposureRamp";
 
 export interface FieldSummary {
   cols: number;
@@ -12,6 +13,7 @@ export interface FieldSummary {
   minMinutes: number;
   maxMinutes: number;
   computeMs: number;
+  overlayMs: number;
 }
 
 interface Props {
@@ -83,7 +85,19 @@ export default function ExposurePanel(props: Props) {
           </div>
           <div className="probe-row">
             <span>Compute</span>
-            <span>{props.field.computeMs.toFixed(0)} ms</span>
+            <span>
+              {props.field.computeMs.toFixed(0)} ms field ·{" "}
+              {props.field.overlayMs.toFixed(0)} ms draw
+            </span>
+          </div>
+
+          <div className="probe-legend">
+            {LEGEND_BANDS.map((band) => (
+              <span key={band.label}>
+                <i style={{ background: band.css }} />
+                {band.label}
+              </span>
+            ))}
           </div>
           <div className="probe-divider" />
         </>
