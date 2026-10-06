@@ -20,6 +20,7 @@ import { pointExposure, sunTimeline } from "./solar/exposure";
 import {
   areaAboveHours,
   exposureField,
+  meanMinutes,
   type ExposureField,
 } from "./solar/exposureField";
 import { DEFAULT_GRID, groundGrid, type Grid } from "./scene/grid";
@@ -63,9 +64,13 @@ export default function App() {
   const objects = useSolarHouseStore((s) => s.objects);
   const fieldEnabled = useSolarHouseStore((s) => s.fieldEnabled);
   const season = useSolarHouseStore((s) => s.season);
-  const [field, setField] = useState<
-    { grid: Grid; result: ExposureField; overlayMs: number } | null
-  >(null);
+  const baseline = useSolarHouseStore((s) => s.baseline);
+  const [field, setField] = useState<{
+    grid: Grid;
+    result: ExposureField;
+    baseline: ExposureField | null;
+    overlayMs: number;
+  } | null>(null);
   const addHouse = useSolarHouseStore((s) => s.addHouse);
   const updateObject = useSolarHouseStore((s) => s.updateObject);
 
@@ -336,7 +341,9 @@ export default function App() {
     }
 
     let cancelled = false;
-    const centre = houseList[0].position;
+    // Anchored to the baseline placement while one exists, so both fields
+    // describe the same piece of ground and the comparison is like for like.
+    const centre = baseline?.[0]?.position ?? houseList[0].position;
 
     (async () => {
       const grid = groundGrid({ centre, ...DEFAULT_GRID });
@@ -353,24 +360,62 @@ export default function App() {
         for (const point of grid.points) point.position.height = centre.height;
       }
 
+      const positions = grid.points.map((p) => p.position);
       const timeline = sunTimeline(centre, date, { utcOffsetHours: zone.offsetHours });
-      const result = exposureField(
-        grid.points.map((p) => p.position),
-        houseList.map(occluderFor),
-        timeline,
-      );
+      const result = exposureField(positions, houseList.map(occluderFor), timeline);
+      // Recomputed against the active timeline rather than stored, so a date or
+      // season change moves both sides together.
+      const baselineResult = baseline
+        ? exposureField(positions, baseline, timeline)
+        : null;
       if (cancelled) return;
 
       await overlay.update(grid, result);
       if (cancelled) return;
-      setField({ grid, result, overlayMs: overlay.lastUpdateMs });
+      setField({
+        grid,
+        result,
+        baseline: baselineResult,
+        overlayMs: overlay.lastUpdateMs,
+      });
     })().catch(console.error);
 
     return () => {
       cancelled = true;
     };
     // `date` is intentionally absent: civilDay captures the only part that matters.
-  }, [fieldEnabled, fieldKey, civilDay, zone.offsetHours, houseList]);
+  }, [fieldEnabled, fieldKey, civilDay, zone.offsetHours, houseList, baseline]);
+
+  // Exact point analysis for both placements, not the nearest grid cell.
+  const baselinePointMinutes = useMemo(() => {
+    if (!probe || !baseline) return null;
+    return pointExposure(probe, baseline, date, {
+      utcOffsetHours: zone.offsetHours,
+    }).directSunMinutes;
+  }, [probe, baseline, date, zone.offsetHours]);
+
+  const comparison = useMemo(() => {
+    if (!field?.baseline) return null;
+    const cellArea = field.grid.spacingMeters ** 2;
+    return {
+      area8h: {
+        baseline: areaAboveHours(field.baseline, cellArea, 8),
+        current: areaAboveHours(field.result, cellArea, 8),
+      },
+      area6h: {
+        baseline: areaAboveHours(field.baseline, cellArea, 6),
+        current: areaAboveHours(field.result, cellArea, 6),
+      },
+      averageMinutes: {
+        baseline: meanMinutes(field.baseline),
+        current: meanMinutes(field.result),
+      },
+      point:
+        baselinePointMinutes !== null && exposure
+          ? { baseline: baselinePointMinutes, current: exposure.directSunMinutes }
+          : null,
+    };
+  }, [field, baselinePointMinutes, exposure]);
 
   // Three point evaluations, not three exposure fields.
   const seasonalPoint = useMemo(() => {
@@ -456,6 +501,14 @@ export default function App() {
       <ExposurePanel
         exposure={exposure}
         seasonal={seasonalPoint}
+        comparison={comparison}
+        hasBaseline={baseline !== null}
+        onSetBaseline={() => {
+          const store = useSolarHouseStore.getState();
+          const houses = Object.values(store.objects).filter((o) => o.type === "house");
+          store.setBaseline(houses.length > 0 ? houses.map(occluderFor) : null);
+        }}
+        onClearBaseline={() => useSolarHouseStore.getState().setBaseline(null)}
         zone={zone}
         armed={probeArmed}
         fieldEnabled={fieldEnabled}

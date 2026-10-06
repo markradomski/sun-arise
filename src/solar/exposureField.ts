@@ -46,6 +46,14 @@ export function areaAboveHours(
   return cells * cellAreaSquareMeters;
 }
 
+/** Mean direct-sun minutes across the sampled points. */
+export function meanMinutes(field: ExposureField): number {
+  if (field.pointCount === 0) return 0;
+  let total = 0;
+  for (let i = 0; i < field.pointCount; i += 1) total += field.minutes[i];
+  return total / field.pointCount;
+}
+
 export function exposureField(
   points: GeoPosition[],
   occluders: BoxOccluder[],

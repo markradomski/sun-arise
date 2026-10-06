@@ -9,6 +9,7 @@ import {
 } from "../scene/types";
 import type { FootprintTerrain } from "../scene/terrainAnalysis";
 import type { Season } from "../solar/seasons";
+import type { BoxOccluder } from "../solar/exposure";
 import { catalogEntry, DEFAULT_HOUSE_SLUG } from "../houses/catalog";
 
 export interface SolarHouseState {
@@ -29,6 +30,11 @@ export interface SolarHouseState {
   fieldEnabled: boolean;
   /** Active seasonal preset, or null when analysing an arbitrary date. */
   season: Season | null;
+  /**
+   * House placement captured for comparison. Stores the placement rather than
+   * a computed field, so the comparison stays valid when the date changes.
+   */
+  baseline: BoxOccluder[] | null;
 
   addObject(object: Omit<SceneObject, "id">): string;
   addHouse(position: GeoPosition, slug?: string): string;
@@ -43,6 +49,7 @@ export interface SolarHouseState {
   armProbe(armed: boolean): void;
   setFieldEnabled(enabled: boolean): void;
   setSeason(season: Season | null): void;
+  setBaseline(baseline: BoxOccluder[] | null): void;
 }
 
 export const useSolarHouseStore = create<SolarHouseState>((set) => ({
@@ -59,6 +66,7 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   probeArmed: false,
   fieldEnabled: false,
   season: null,
+  baseline: null,
 
   addObject(object) {
     const id = nextObjectId(object.type);
@@ -161,6 +169,10 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
 
   setSeason(season) {
     set({ season });
+  },
+
+  setBaseline(baseline) {
+    set({ baseline });
   },
 
   setObjectTerrain(id, terrain) {

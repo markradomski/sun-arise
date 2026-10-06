@@ -411,3 +411,30 @@ input[type="date"]:focus {
 .probe-interval-group { display: flex; gap: 8px; margin-top: 6px; }
 .probe-interval-label { flex: none; width: 38px; color: #777d85; }
 .probe-subhead span { color: #f2efe7 !important; letter-spacing: .04em; }
+
+/* Placement comparison */
+.probe-compare {
+  display: grid;
+  grid-template-columns: 1fr 52px 52px 48px;
+  gap: 6px;
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+.probe-compare span:first-child { color: #777d85; }
+.probe-compare span:not(:first-child) { text-align: right; }
+.probe-compare-head span { color: #777d85 !important; font-size: 10px; }
+.probe-delta.up { color: #6ee7a0; }
+.probe-delta.down { color: #e8795a; }
+.probe-delta.flat { color: #777d85; }
+.probe-link {
+  margin-left: auto;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  color: #ffd36a;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.probe-link:hover { text-decoration: underline; }
+.probe-clear { display: block; margin: 8px 0 0; color: #777d85; }

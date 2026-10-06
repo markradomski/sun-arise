@@ -21,7 +21,23 @@ export interface FieldSummary {
   coveredAreaSquareMeters: number;
 }
 
+export interface ComparisonPair {
+  baseline: number;
+  current: number;
+}
+
+export interface PlacementComparison {
+  area8h: ComparisonPair;
+  area6h: ComparisonPair;
+  averageMinutes: ComparisonPair;
+  point: ComparisonPair | null;
+}
+
 interface Props {
+  comparison: PlacementComparison | null;
+  hasBaseline: boolean;
+  onSetBaseline: () => void;
+  onClearBaseline: () => void;
   exposure: PointExposure | null;
   seasonal: SeasonalPoint[] | null;
   zone: CivilZone;
@@ -169,6 +185,64 @@ export default function ExposurePanel(props: Props) {
         </>
       )}
 
+      {props.fieldEnabled && (
+        <>
+          <div className="probe-divider" />
+          <div className="probe-row probe-subhead">
+            <span>SUNLIGHT COMPARISON</span>
+            <button className="probe-link" onClick={props.onSetBaseline}>
+              {props.hasBaseline ? "Reset" : "Set baseline"}
+            </button>
+          </div>
+
+          {!props.comparison && (
+            <p className="probe-note">
+              Capture a baseline, then move or rotate the house.
+            </p>
+          )}
+
+          {props.comparison && (
+            <>
+              <div className="probe-compare probe-compare-head">
+                <span />
+                <span>Baseline</span>
+                <span>Current</span>
+                <span>Change</span>
+              </div>
+              <ComparisonRow
+                label="8+ h area"
+                pair={props.comparison.area8h}
+                format={formatArea}
+                delta={formatAreaDelta}
+              />
+              <ComparisonRow
+                label="6+ h area"
+                pair={props.comparison.area6h}
+                format={formatArea}
+                delta={formatAreaDelta}
+              />
+              <ComparisonRow
+                label="Avg exposure"
+                pair={props.comparison.averageMinutes}
+                format={formatShortDuration}
+                delta={formatMinutesDelta}
+              />
+              {props.comparison.point && (
+                <ComparisonRow
+                  label="Inspect point"
+                  pair={props.comparison.point}
+                  format={formatShortDuration}
+                  delta={formatMinutesDelta}
+                />
+              )}
+              <button className="probe-link probe-clear" onClick={props.onClearBaseline}>
+                Clear baseline
+              </button>
+            </>
+          )}
+        </>
+      )}
+
       {props.seasonal && (
         <>
           <div className="probe-divider" />
@@ -189,6 +263,58 @@ export default function ExposurePanel(props: Props) {
       </p>
     </div>
   );
+}
+
+function ComparisonRow(props: {
+  label: string;
+  pair: ComparisonPair;
+  format: (value: number) => string;
+  delta: (pair: ComparisonPair) => { text: string; direction: number };
+}) {
+  const { text, direction } = props.delta(props.pair);
+  const tone = direction > 0 ? "up" : direction < 0 ? "down" : "flat";
+  return (
+    <div className="probe-compare">
+      <span>{props.label}</span>
+      <span>{props.format(props.pair.baseline)}</span>
+      <span>{props.format(props.pair.current)}</span>
+      <span className={`probe-delta ${tone}`}>{text}</span>
+    </div>
+  );
+}
+
+function formatArea(squareMeters: number): string {
+  return `${Math.round(squareMeters)} m²`;
+}
+
+function formatAreaDelta(pair: ComparisonPair) {
+  const change = pair.current - pair.baseline;
+  if (pair.baseline === 0) {
+    return { text: change === 0 ? "—" : "new", direction: Math.sign(change) };
+  }
+  const percent = (change / pair.baseline) * 100;
+  if (Math.round(percent) === 0) return { text: "—", direction: 0 };
+  return {
+    text: `${percent > 0 ? "+" : "−"}${Math.abs(percent).toFixed(0)}%`,
+    direction: Math.sign(change),
+  };
+}
+
+function formatMinutesDelta(pair: ComparisonPair) {
+  const change = Math.round(pair.current - pair.baseline);
+  if (change === 0) return { text: "—", direction: 0 };
+  return {
+    text: `${change > 0 ? "+" : "−"}${formatShortDuration(Math.abs(change))}`,
+    direction: Math.sign(change),
+  };
+}
+
+/** Compact form for table cells: 9h06, 45m. */
+function formatShortDuration(minutes: number): string {
+  const rounded = Math.round(minutes);
+  const h = Math.floor(rounded / 60);
+  const m = rounded % 60;
+  return h > 0 ? `${h}h${String(m).padStart(2, "0")}` : `${m}m`;
 }
 
 function formatDuration(minutes: number): string {
