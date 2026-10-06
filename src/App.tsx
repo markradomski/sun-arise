@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CameraController } from "./cesium/CameraController";
+import {
+  CameraController,
+  DEFAULT_CAMERA_MODE,
+  type CameraMode,
+} from "./cesium/CameraController";
 import { CesiumScene } from "./cesium/CesiumScene";
 import { DragController } from "./cesium/DragController";
 import { ObjectLayer } from "./cesium/ObjectLayer";
@@ -7,6 +11,8 @@ import { SelectionOverlay } from "./cesium/SelectionOverlay";
 import { approxHeight, settleHeight } from "./cesium/terrain";
 import { SolarClock } from "./solar/SolarClock";
 import { solarPosition } from "./solar/solarPosition";
+import { civilZone, withCivilDate, withCivilMinutes } from "./solar/timezone";
+import type { GeoPosition } from "./scene/types";
 import {
   selectOrderedObjects,
   selectSelectedObject,
@@ -19,10 +25,6 @@ INITIAL_DATE.setHours(12, 0, 0, 0);
 
 const INITIAL_SITE = { latitude: -33.8688, longitude: 151.2093, height: 0 };
 
-// TODO(phase-1 §6.1): hardcoded to Sydney. Every sun position outside UTC+10 is
-// wrong. Blocked on the tz-lookup vs longitude/15 decision.
-const UTC_OFFSET_HOURS = 10;
-
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<CesiumScene | null>(null);
@@ -34,9 +36,10 @@ export default function App() {
   const [date, setDate] = useState(INITIAL_DATE);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(12);
-  const [is3D, setIs3D] = useState(true);
+  const [cameraMode, setCameraMode] = useState<CameraMode>(DEFAULT_CAMERA_MODE);
 
   const selected = useSolarHouseStore(selectSelectedObject);
+  const site = useSolarHouseStore((s) => s.site);
   const addHouse = useSolarHouseStore((s) => s.addHouse);
   const updateObject = useSolarHouseStore((s) => s.updateObject);
 
@@ -51,7 +54,10 @@ export default function App() {
     layerRef.current = layer;
 
     if (import.meta.env.DEV) {
-      Object.assign(globalThis, { __solarHouseScene: scene, __solarHouseLayer: layer });
+      Object.assign(globalThis, {
+        __solarHouseScene: scene,
+        __solarHouseLayer: layer,
+      });
     }
 
     let disposed = false;
@@ -70,19 +76,21 @@ export default function App() {
     const overlay = new SelectionOverlay(scene.viewer);
     overlayRef.current = overlay;
 
-    // Driven per-frame rather than from the store subscription: the model's
-    // footprint radius only becomes readable once it is GPU-ready, which
-    // happens some frames after the object enters the store.
+    // Driven per-frame so the ring tracks a drag without the store
+    // subscription having to re-run the whole render path.
     const stopOverlay = scene.viewer.scene.postUpdate.addEventListener(() => {
       const state = useSolarHouseStore.getState();
-      const current = state.selectedId ? state.objects[state.selectedId] ?? null : null;
-      overlay.update(current, current ? layer.getRadius(current.id) : undefined);
+      overlay.update(selectSelectedObject(state));
     });
 
     const camera = new CameraController(scene.viewer);
     cameraRef.current = camera;
 
-    // Open at the house rather than in orbit. The model's position is only
+    if (import.meta.env.DEV) {
+      Object.assign(globalThis, { __solarHouseCamera: camera });
+    }
+
+    // Open at SITE rather than in orbit. The model's position is only
     // meaningful once it has loaded and settled onto terrain, so wait for
     // readiness and then set the view directly — no fly-from-space.
     let framed = false;
@@ -90,9 +98,9 @@ export default function App() {
       if (framed || disposed) return;
       const state = useSolarHouseStore.getState();
       const first = state.order[0] ? state.objects[state.order[0]] : undefined;
-      if (!first || layer.getRadius(first.id) === undefined) return;
+      if (!first || !layer.isReady(first.id)) return;
 
-      camera.frameSite(first);
+      camera.setTo(DEFAULT_CAMERA_MODE, first.position);
       framed = true;
       stopInitialFraming();
     });
@@ -174,14 +182,38 @@ export default function App() {
   // Shadows are rendered by Cesium's shadow map from the real model geometry;
   // the sun-ray polylines that used to be drawn here were removed because they
   // did not convey sunlight vs shade any better than the cast shadow itself.
-  const sunOrigin = selected?.position ?? INITIAL_SITE;
+  // Falls back to the current site rather than the initial one, so civil time
+  // and sun position still follow the map after the selection is cleared.
+  const sunOrigin = selected?.position ??
+    (site ? { ...site, height: 0 } : INITIAL_SITE);
+
+  // Civil time follows the *site*, not the browser. The clock stores an
+  // absolute instant; everything shown to the user is that instant expressed
+  // in the selected location's zone, DST included.
+  const zone = useMemo(
+    () => civilZone(date, sunOrigin.latitude, sunOrigin.longitude),
+    [date, sunOrigin.latitude, sunOrigin.longitude],
+  );
 
   const solar = solarPosition(
     date,
     sunOrigin.latitude,
     sunOrigin.longitude,
-    UTC_OFFSET_HOURS,
+    zone.offsetHours,
   );
+
+  const handleCameraMode = (mode: CameraMode) => {
+    setCameraMode(mode);
+    const store = useSolarHouseStore.getState();
+    store.setCameraMode(mode);
+
+    const site = store.site;
+    const target: GeoPosition =
+      selected?.position ??
+      (site ? { ...site, height: 0 } : INITIAL_SITE);
+
+    cameraRef.current?.flyTo(mode, target);
+  };
 
   const handlePlace = () => {
     const scene = sceneRef.current;
@@ -194,14 +226,6 @@ export default function App() {
     if (selected) updateObject(selected.id, { rotation: { ...selected.rotation, heading } });
   };
 
-  const handleToggleTilt = () => {
-    const scene = sceneRef.current;
-    if (!scene) return;
-    const next = !is3D;
-    setIs3D(next);
-    next ? scene.tiltTo3D() : scene.tiltTo2D();
-  };
-
   return (
     <main className="app">
       <div ref={containerRef} className="globe" />
@@ -211,10 +235,15 @@ export default function App() {
         playing={playing}
         speed={speed}
         heading={selected?.rotation.heading ?? 0}
-        is3D={is3D}
+        cameraMode={cameraMode}
+        zone={zone}
         solar={solar}
-        onDate={(next) => clock.setDate(next)}
-        onTime={(minutes) => clock.setTimeMinutes(minutes)}
+        onDate={(year, month, day) =>
+          clock.setDate(withCivilDate(date, zone.timeZone, year, month, day))
+        }
+        onTime={(minutes) =>
+          clock.setDate(withCivilMinutes(date, zone.timeZone, minutes))
+        }
         onToggle={() => clock.toggle()}
         onSpeed={(next) => {
           setSpeed(next);
@@ -222,7 +251,7 @@ export default function App() {
         }}
         onHeading={handleHeading}
         onPlace={handlePlace}
-        onToggleTilt={handleToggleTilt}
+        onCameraMode={handleCameraMode}
       />
       <div className="north">N</div>
       <div className="location-pill">Sydney · MVP starting location</div>

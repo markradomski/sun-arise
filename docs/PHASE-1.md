@@ -1,6 +1,6 @@
 # Phase 1 — Interactive Site Sandbox
 
-**Status:** steps 1–5 implemented, 6–10 proposed
+**Status:** steps 1–6 implemented, 7–10 proposed
 **Date:** 2026-09-08 (updated 2026-09-09)
 **Baseline commit:** `c1c112c`
 
@@ -11,7 +11,9 @@
 | 3. Terrain | ⚠️ done, world terrain unverified — needs an ion token (decision #2) |
 | 4. Selection / drag / rotate / scale | ⚠️ done; desktop scale still UI-only (see below) |
 | 5. Selection overlay | ✅ done |
-| 6. CameraController | ⚠️ partial — SITE view on load; named-state transitions still to do |
+| 6. CameraController | ✅ done — ORBIT / REGION / SITE / HOUSE / SOLAR |
+| Civil timezone | ✅ done (was §6.1) |
+| Reference house | ✅ done |
 | 7–10 | proposed |
 
 ---
@@ -502,13 +504,23 @@ local minutes correctly).
 Fixed by splitting `utcMinutes` from `minutes`. Noon altitude at Sydney now
 reads 50.5°, which is correct for early September.
 
-### 6.1 UTC offset is hardcoded to Sydney — STILL OPEN
+### 6.1 UTC offset hardcoded to Sydney — FIXED
 
-[`App.tsx`](../src/App.tsx) passes a module-level `UTC_OFFSET_HOURS = 10`.
+Replaced by [`src/solar/timezone.ts`](../src/solar/timezone.ts): `tz-lookup`
+resolves lat/lon to an IANA zone, then `Intl` resolves the UTC offset **for a
+specific instant**, so DST is correct rather than assumed per zone.
 
-**Every sun position outside UTC+10 is still wrong** — and flying anywhere on
-Earth is the entire premise of Phase 1. Distinct from §6.0: that was a formula
-error, this is a missing lookup. Blocked on decision #1.
+The clock stores an absolute instant; the UI expresses it as wall-clock time at
+the *selected site*. Moving the house across a timezone changes the displayed
+time without changing the instant being simulated.
+
+Verified at one instant: Sydney `GMT+11` 12:00, Hobart `GMT+11` 12:00, London
+`GMT+1` 02:00, Denver `MDT` 19:00, Kathmandu `GMT+5:45` 06:45. The last
+confirms fractional offsets parse; the DST abbreviations confirm per-instant
+resolution.
+
+`solarPosition` still just receives an offset and does not know where it came
+from, so `solar/` keeps importing nothing from `cesium/` or `state/`.
 
 Options:
 
@@ -592,3 +604,75 @@ Details that cost time when discovered late:
 | Object scale | `Model.scale` is a separate property — keep the model matrix pure heading/pitch/roll |
 | Two-finger rotate | Not native; derive from `PINCH_MOVE`'s `angleAndHeight` |
 | React Strict Mode | Double-mounts the viewer; async model loads need a version guard (already handled — preserve it) |
+
+---
+
+## Appendix B — findings from the reference-house pass
+
+Four things cost real time here and are worth not rediscovering.
+
+### Cesium's glTF axis defaults are not safe to assume
+
+`Model.fromGltfAsync` was loading the house lying on its back. `upAxis` and
+`forwardAxis` are now stated explicitly in
+[`ObjectLayer`](../src/cesium/ObjectLayer.ts) rather than left to the default.
+
+Working the mapping through: with `upAxis: Y` / `forwardAxis: Z`, Cesium rotates
+glTF `+Z` onto its own `+X` "forward", which lands on **east** in the ENU frame
+at heading 0 — and `+X` follows round to **north**. So the canonical convention
+is `+X forward`, not the glTF-idiomatic `-Z`.
+
+The generator still *authors* front-at-`-Z` (that is how elevations are drawn)
+and rotates into the emitted frame in one documented step.
+
+### The shadow map made a correct model look broken
+
+The house rendered almost black on its **sunlit** side. Nothing was wrong with
+the geometry, materials or normals: Cesium's shadow map defaults to
+`maximumDistance = 5000` m, and across a 15 m building that leaves so little
+depth precision that the whole thing self-shadows.
+
+`CesiumScene` now sets `maximumDistance = 600`, `softShadows`, `normalOffset`
+and `darkness = 0.38`. Any later work at a different scale — a whole street, or
+a single panel — will need this retuned.
+
+### A 3D bounding sphere is the wrong basis for a ground ring
+
+It includes the building's height, so a tall narrow form gets a ring far wider
+than its footprint. Catalog entries now declare `footprint`, and the ring uses
+its diagonal at 1.2×.
+
+### pickPosition lies when the model has translucent materials
+
+While diagnosing the orientation bug, `scene.pickPosition` returned a *constant*
+height across 128 screen points. The glazing uses `alphaMode: BLEND`, and the
+translucent pass writes no depth. `scene.pick` (which object?) is reliable;
+`pickPosition` (where exactly?) is not, on a model with any transparency.
+
+Ground picking is unaffected — `DragController` deliberately uses
+`globe.pick(ray)` with a `pickEllipsoid` fallback, neither of which touches
+model depth.
+
+---
+
+## Appendix C — terrain limitations (unresolved)
+
+No ion token is configured, so the app runs on `EllipsoidTerrainProvider` and
+everything below is **unverified against real elevation**.
+
+- `createWorldTerrainAsync()` is wired and falls back cleanly, logging which
+  path it took. Set `VITE_CESIUM_ION_TOKEN` in `.env` (never committed; only the
+  variable name appears in `.env.example`).
+- `globe.pick(ray)` returns nothing when terrain tiles have not loaded, which
+  happens often on Cesium's shared default token. Ground placement still works
+  because `DragController` falls back to `pickEllipsoid` — worth remembering,
+  because it means placement silently degrades to sea-level geometry rather
+  than failing loudly.
+- **Houses stay level.** `settleHeight` samples a single point, so on a slope
+  one corner floats and the opposite buries. Per Phase 1 scope there is no
+  cut-and-fill system and no tilting-to-slope: a tilted house reads as a bug
+  even when geometrically "correct", because real houses are built level on a
+  graded pad.
+- `SceneObject.rotation` already carries `pitch`/`roll` end to end, so
+  terrain-following objects (ground-mounted solar arrays, decks) need no data
+  model change when that work starts — only a per-type policy.

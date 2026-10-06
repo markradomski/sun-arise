@@ -1,29 +1,44 @@
 import type { SolarPosition } from "../types";
+import type { CameraMode } from "../cesium/CameraController";
+import type { CivilZone } from "../solar/timezone";
 import { formatClockMinutes } from "../solar/solarPosition";
+import { civilParts } from "../solar/timezone";
 
 interface Props {
   date: Date;
   playing: boolean;
   speed: number;
   heading: number;
-  is3D: boolean;
+  cameraMode: CameraMode;
+  zone: CivilZone;
   solar: SolarPosition;
-  onDate: (date: Date) => void;
+  onDate: (year: number, month: number, day: number) => void;
   onTime: (minutes: number) => void;
   onToggle: () => void;
   onSpeed: (speed: number) => void;
   onHeading: (heading: number) => void;
   onPlace: () => void;
-  onToggleTilt: () => void;
+  onCameraMode: (mode: CameraMode) => void;
 }
 
+const CAMERA_MODES: { mode: CameraMode; label: string }[] = [
+  { mode: "ORBIT", label: "Orbit" },
+  { mode: "REGION", label: "Region" },
+  { mode: "SITE", label: "Site" },
+  { mode: "HOUSE", label: "House" },
+  { mode: "SOLAR", label: "Solar" },
+];
+
 export default function Controls(props: Props) {
-  const minutes = props.date.getHours() * 60 + props.date.getMinutes();
+  // Everything shown here is civil time at the *site*, not in the browser's
+  // own timezone.
+  const parts = civilParts(props.date, props.zone.timeZone);
+  const minutes = parts.hour * 60 + parts.minute;
 
   const dateValue = [
-    props.date.getFullYear(),
-    String(props.date.getMonth() + 1).padStart(2, "0"),
-    String(props.date.getDate()).padStart(2, "0"),
+    String(parts.year).padStart(4, "0"),
+    String(parts.month).padStart(2, "0"),
+    String(parts.day).padStart(2, "0"),
   ].join("-");
 
   return (
@@ -39,15 +54,28 @@ export default function Controls(props: Props) {
       <button className="primary" onClick={props.onPlace}>＋ Drop house here</button>
 
       <section>
+        <div className="section-label">VIEW</div>
+        <div className="camera-modes">
+          {CAMERA_MODES.map(({ mode, label }) => (
+            <button
+              key={mode}
+              className={props.cameraMode === mode ? "active" : ""}
+              onClick={() => props.onCameraMode(mode)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section>
         <div className="section-label">DATE</div>
         <input
           type="date"
           value={dateValue}
           onChange={(e) => {
             const [y, m, d] = e.target.value.split("-").map(Number);
-            const next = new Date(props.date);
-            next.setFullYear(y, m - 1, d);
-            props.onDate(next);
+            if (y && m && d) props.onDate(y, m, d);
           }}
         />
       </section>
@@ -66,14 +94,17 @@ export default function Controls(props: Props) {
           onChange={(e) => props.onTime(Number(e.target.value))}
         />
         <div className="range-labels"><span>00:00</span><span>12:00</span><span>24:00</span></div>
+        <div className="zone-row">
+          <span className="muted">{props.zone.timeZone.replace(/_/g, " ")}</span>
+          <span className="muted">{props.zone.abbreviation || formatOffset(props.zone.offsetHours)}</span>
+        </div>
       </section>
 
       <div className="transport">
         <button className={`play ${props.playing ? "playing" : ""}`} onClick={props.onToggle}>{props.playing ? "Ⅱ" : "▶"}</button>
-        <button onClick={() => props.onSpeed(1)}>1×</button>
-        <button onClick={() => props.onSpeed(12)}>12×</button>
-        <button onClick={() => props.onSpeed(60)}>60×</button>
-        <button onClick={props.onToggleTilt} title={props.is3D ? "Switch to 2D" : "Switch to 3D"}>{props.is3D ? "3D" : "2D"}</button>
+        <button className={props.speed === 1 ? "active" : ""} onClick={() => props.onSpeed(1)}>1×</button>
+        <button className={props.speed === 12 ? "active" : ""} onClick={() => props.onSpeed(12)}>12×</button>
+        <button className={props.speed === 60 ? "active" : ""} onClick={() => props.onSpeed(60)}>60×</button>
       </div>
 
       <section>
@@ -96,8 +127,16 @@ export default function Controls(props: Props) {
       </section>
 
       <p className="hint">
-        MVP: click/tap the globe to choose a location, then use the controls to rotate the house and run the sun through the day.
+        Drag the house to move it · Shift+drag to rotate · click the ground to place.
       </p>
     </aside>
   );
+}
+
+function formatOffset(hours: number): string {
+  const sign = hours < 0 ? "-" : "+";
+  const abs = Math.abs(hours);
+  const h = Math.floor(abs);
+  const m = Math.round((abs - h) * 60);
+  return `UTC${sign}${h}${m ? `:${String(m).padStart(2, "0")}` : ""}`;
 }

@@ -18,7 +18,9 @@ button, input { font: inherit; }
   position: absolute;
   z-index: 10;
   left: 20px; top: 20px; bottom: 20px;
-  width: 340px;
+  /* Capped against the viewport so the panel can never swallow the scene.
+     Minimum fix only — the full layout lands with the step 10 restructure. */
+  width: min(340px, calc(100vw - 40px));
   padding: 22px;
   overflow: auto;
   border: 1px solid rgba(255,255,255,.11);
@@ -197,7 +199,7 @@ input[type="date"]:focus {
   color: #b8bdc5; font-size: 11px; backdrop-filter: blur(12px);
 }
 @media (min-width: 701px) {
-  .controls { width: 520px; padding: 40px; }
+  .controls { width: clamp(300px, 30vw, 400px); padding: 28px; }
   .brand { gap: 16px; margin-bottom: 32px; }
   .brand-mark { font-size: 48px; }
   .eyebrow, .section-label, .stats span { font-size: 16px; }
@@ -227,4 +229,36 @@ input[type="date"]:focus {
   section { margin-top: 13px; }
   .hint { display: none; }
   .location-pill { display: none; }
+}
+
+/* Camera state switcher */
+.camera-modes { display: flex; flex-wrap: wrap; gap: 6px; }
+.camera-modes button {
+  flex: 1 1 auto;
+  min-width: 56px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: #d0ccc0;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.camera-modes button:hover { background: rgba(255,255,255,.1); color: #f2efe7; }
+.camera-modes button.active {
+  background: #f2efe7;
+  border-color: #f2efe7;
+  color: #111;
+}
+.transport button.active { background: rgba(242,239,231,.18); color: #f2efe7; }
+
+/* Timezone readout under the time slider */
+.zone-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
 }
