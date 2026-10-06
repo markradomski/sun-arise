@@ -25,6 +25,7 @@ export interface SolarHouseState {
   probe: GeoPosition | null;
   /** The next ground click places the probe rather than a house. */
   probeArmed: boolean;
+  fieldEnabled: boolean;
 
   addObject(object: Omit<SceneObject, "id">): string;
   addHouse(position: GeoPosition, slug?: string): string;
@@ -37,6 +38,7 @@ export interface SolarHouseState {
   setObjectTerrain(id: string, terrain: FootprintTerrain | null): void;
   setProbe(probe: GeoPosition | null): void;
   armProbe(armed: boolean): void;
+  setFieldEnabled(enabled: boolean): void;
 }
 
 export const useSolarHouseStore = create<SolarHouseState>((set) => ({
@@ -51,6 +53,7 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   terrain: {},
   probe: null,
   probeArmed: false,
+  fieldEnabled: false,
 
   addObject(object) {
     const id = nextObjectId(object.type);
@@ -145,6 +148,10 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
 
   armProbe(armed) {
     set({ probeArmed: armed });
+  },
+
+  setFieldEnabled(enabled) {
+    set({ fieldEnabled: enabled });
   },
 
   setObjectTerrain(id, terrain) {

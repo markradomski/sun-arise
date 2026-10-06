@@ -58,61 +58,129 @@ export interface ExposureOptions {
   utcOffsetHours: number;
 }
 
+export interface SunSample {
+  at: Date;
+  azimuthDeg: number;
+  altitudeDeg: number;
+}
+
+/**
+ * Daylight sun positions for one civil day, computed once and shared across
+ * every sample point. Across a site-scale field the sun's position varies by
+ * far less than the sampling interval resolves, so recomputing it per point
+ * would be pure waste.
+ */
+export interface SunTimeline {
+  date: Date;
+  sampleIntervalMinutes: number;
+  /** Daylight samples only; night is absent rather than marked. */
+  samples: SunSample[];
+  daylightMinutes: number;
+}
+
+export function sunTimeline(
+  location: { latitude: number; longitude: number },
+  date: Date,
+  options: ExposureOptions,
+): SunTimeline {
+  const step = options.sampleIntervalMinutes ?? DEFAULT_SAMPLE_INTERVAL_MINUTES;
+  const count = Math.round((24 * 60) / step);
+  const dayStart = startOfLocalDay(date, options.utcOffsetHours);
+  const samples: SunSample[] = [];
+
+  for (let i = 0; i < count; i += 1) {
+    const at = new Date(dayStart.getTime() + i * step * 60_000);
+    const sun = solarPosition(
+      at,
+      location.latitude,
+      location.longitude,
+      options.utcOffsetHours,
+    );
+    if (sun.altitudeDeg <= 0) continue;
+    samples.push({ at, azimuthDeg: sun.azimuthDeg, altitudeDeg: sun.altitudeDeg });
+  }
+
+  return {
+    date: dayStart,
+    sampleIntervalMinutes: step,
+    samples,
+    daylightMinutes: samples.length * step,
+  };
+}
+
+/** Minutes of direct sun for one point against a prepared timeline. */
+export function directSunMinutes(
+  point: GeoPosition,
+  occluders: BoxOccluder[],
+  timeline: SunTimeline,
+): number {
+  let minutes = 0;
+  for (const sample of timeline.samples) {
+    let blocked = false;
+    for (const occluder of occluders) {
+      if (occludes(occluder, point, sample.azimuthDeg, sample.altitudeDeg)) {
+        blocked = true;
+        break;
+      }
+    }
+    if (!blocked) minutes += timeline.sampleIntervalMinutes;
+  }
+  return minutes;
+}
+
+/** Full per-point result, including the sun/shade intervals. */
+export function exposureFor(
+  point: GeoPosition,
+  occluders: BoxOccluder[],
+  timeline: SunTimeline,
+): PointExposure {
+  const step = timeline.sampleIntervalMinutes;
+  const intervals: ExposureInterval[] = [];
+  let sunMinutes = 0;
+
+  for (const sample of timeline.samples) {
+    const blocked = occluders.some((occluder) =>
+      occludes(occluder, point, sample.azimuthDeg, sample.altitudeDeg),
+    );
+    if (!blocked) sunMinutes += step;
+
+    const state: ExposureState = blocked ? "BLOCKED" : "SUN";
+    const end = new Date(sample.at.getTime() + step * 60_000);
+    const previous = intervals[intervals.length - 1];
+
+    if (
+      previous &&
+      previous.state === state &&
+      previous.end.getTime() === sample.at.getTime()
+    ) {
+      previous.end = end;
+    } else {
+      intervals.push({ start: sample.at, end, state });
+    }
+  }
+
+  return {
+    date: timeline.date,
+    daylightMinutes: timeline.daylightMinutes,
+    directSunMinutes: sunMinutes,
+    directSunFraction:
+      timeline.daylightMinutes > 0 ? sunMinutes / timeline.daylightMinutes : 0,
+    intervals,
+    sampleIntervalMinutes: step,
+  };
+}
+
 const DEFAULT_SAMPLE_INTERVAL_MINUTES = 5;
 const DEG = Math.PI / 180;
 
+/** Convenience wrapper that builds a timeline for a single point. */
 export function pointExposure(
   point: GeoPosition,
   occluders: BoxOccluder[],
   date: Date,
   options: ExposureOptions,
 ): PointExposure {
-  const step = options.sampleIntervalMinutes ?? DEFAULT_SAMPLE_INTERVAL_MINUTES;
-  const samples = Math.round((24 * 60) / step);
-
-  const dayStart = startOfLocalDay(date, options.utcOffsetHours);
-  const intervals: ExposureInterval[] = [];
-  let daylightMinutes = 0;
-  let directSunMinutes = 0;
-
-  for (let i = 0; i < samples; i += 1) {
-    const at = new Date(dayStart.getTime() + i * step * 60_000);
-    const sun = solarPosition(
-      at,
-      point.latitude,
-      point.longitude,
-      options.utcOffsetHours,
-    );
-
-    // Night is absence of daylight, not shade: it contributes to neither total
-    // and produces no interval.
-    if (sun.altitudeDeg <= 0) continue;
-
-    daylightMinutes += step;
-    const blocked = occluders.some((occluder) =>
-      occludes(occluder, point, sun.azimuthDeg, sun.altitudeDeg),
-    );
-    if (!blocked) directSunMinutes += step;
-
-    const state: ExposureState = blocked ? "BLOCKED" : "SUN";
-    const end = new Date(at.getTime() + step * 60_000);
-    const previous = intervals[intervals.length - 1];
-
-    if (previous && previous.state === state && previous.end.getTime() === at.getTime()) {
-      previous.end = end;
-    } else {
-      intervals.push({ start: at, end, state });
-    }
-  }
-
-  return {
-    date: dayStart,
-    daylightMinutes,
-    directSunMinutes,
-    directSunFraction: daylightMinutes > 0 ? directSunMinutes / daylightMinutes : 0,
-    intervals,
-    sampleIntervalMinutes: step,
-  };
+  return exposureFor(point, occluders, sunTimeline(point, date, options));
 }
 
 /**

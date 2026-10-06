@@ -14,7 +14,10 @@ import { TerrainSampler } from "./cesium/TerrainSampler";
 import { SolarClock } from "./solar/SolarClock";
 import { solarPosition } from "./solar/solarPosition";
 import { civilZone, withCivilDate, withCivilMinutes } from "./solar/timezone";
-import { pointExposure } from "./solar/exposure";
+import { pointExposure, sunTimeline } from "./solar/exposure";
+import { exposureField, type ExposureField } from "./solar/exposureField";
+import { DEFAULT_GRID, groundGrid, type Grid } from "./scene/grid";
+import { FieldOverlay } from "./cesium/FieldOverlay";
 import { occluderFor } from "./scene/occluders";
 import { terrainPolicyFor, type GeoPosition } from "./scene/types";
 import { DEFAULT_SITE } from "./scene/site";
@@ -40,6 +43,7 @@ export default function App() {
   const overlayRef = useRef<SelectionOverlay | null>(null);
   const cameraRef = useRef<CameraController | null>(null);
   const settleRef = useRef<((id: string) => Promise<void>) | null>(null);
+  const fieldOverlayRef = useRef<FieldOverlay | null>(null);
 
   const [date, setDate] = useState(INITIAL_DATE);
   const [playing, setPlaying] = useState(false);
@@ -51,6 +55,8 @@ export default function App() {
   const probe = useSolarHouseStore((s) => s.probe);
   const probeArmed = useSolarHouseStore((s) => s.probeArmed);
   const objects = useSolarHouseStore((s) => s.objects);
+  const fieldEnabled = useSolarHouseStore((s) => s.fieldEnabled);
+  const [field, setField] = useState<{ grid: Grid; result: ExposureField } | null>(null);
   const addHouse = useSolarHouseStore((s) => s.addHouse);
   const updateObject = useSolarHouseStore((s) => s.updateObject);
 
@@ -174,6 +180,9 @@ export default function App() {
       useSolarHouseStore.getState().setProbe({ ...location, height });
     }
 
+    const fieldOverlay = new FieldOverlay(scene.scene);
+    fieldOverlayRef.current = fieldOverlay;
+
     const probeMarker = new ProbeMarker(scene.viewer);
     const stopProbe = scene.viewer.scene.postUpdate.addEventListener(() => {
       probeMarker.update(useSolarHouseStore.getState().probe);
@@ -241,6 +250,8 @@ export default function App() {
       stopOverlay();
       stopProbe();
       probeMarker.destroy();
+      fieldOverlay.destroy();
+      fieldOverlayRef.current = null;
       stopInitialFraming();
       drag.destroy();
       sampler.dispose();
@@ -289,6 +300,67 @@ export default function App() {
     // Keyed on the civil date rather than `date` itself: this is a whole-day
     // result, and the clock ticks every frame while the simulation plays.
   }, [probe, objects, civilDay, zone.offsetHours]);
+
+  const houseList = useMemo(
+    () => Object.values(objects).filter((object) => object.type === "house"),
+    [objects],
+  );
+
+  // Keyed on the inputs that actually change the field. Camera movement and
+  // clock ticks within the same civil day deliberately do not recompute it.
+  const fieldKey = houseList
+    .map(
+      (h) =>
+        `${h.id}:${h.position.latitude.toFixed(7)},${h.position.longitude.toFixed(7)},${h.position.height.toFixed(2)},${h.rotation.heading.toFixed(2)},${h.scale}`,
+    )
+    .join("|");
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    const overlay = fieldOverlayRef.current;
+    if (!scene || !overlay) return;
+
+    if (!fieldEnabled || houseList.length === 0) {
+      overlay.clear();
+      setField(null);
+      return;
+    }
+
+    let cancelled = false;
+    const centre = houseList[0].position;
+
+    (async () => {
+      const grid = groundGrid({ centre, ...DEFAULT_GRID });
+      const provider = scene.getTerrainProvider();
+      const status = useSolarHouseStore.getState().terrainStatus;
+
+      if (provider && status === "READY") {
+        const heights = await sampleElevations(provider, grid.points.map((p) => p.position));
+        if (cancelled) return;
+        grid.points.forEach((point, index) => {
+          point.position.height = heights[index] ?? centre.height;
+        });
+      } else {
+        for (const point of grid.points) point.position.height = centre.height;
+      }
+
+      const timeline = sunTimeline(centre, date, { utcOffsetHours: zone.offsetHours });
+      const result = exposureField(
+        grid.points.map((p) => p.position),
+        houseList.map(occluderFor),
+        timeline,
+      );
+      if (cancelled) return;
+
+      overlay.update(grid, result);
+      setField({ grid, result });
+    })().catch(console.error);
+
+    return () => {
+      cancelled = true;
+    };
+    // `date` is intentionally absent: civilDay captures the only part that matters.
+  }, [fieldEnabled, fieldKey, civilDay, zone.offsetHours, houseList]);
 
   const handleCameraMode = (mode: CameraMode) => {
     setCameraMode(mode);
@@ -348,10 +420,28 @@ export default function App() {
         exposure={exposure}
         zone={zone}
         armed={probeArmed}
+        fieldEnabled={fieldEnabled}
+        field={
+          field && {
+            cols: field.grid.cols,
+            rows: field.grid.rows,
+            pointCount: field.result.pointCount,
+            spacingMeters: field.grid.spacingMeters,
+            extentMeters: field.grid.extentMeters,
+            sunSamples: field.result.timeline.samples.length,
+            minMinutes: field.result.minMinutes,
+            maxMinutes: field.result.maxMinutes,
+            computeMs: field.result.computeMs,
+          }
+        }
         onArm={() => useSolarHouseStore.getState().armProbe(true)}
+        onToggleField={() =>
+          useSolarHouseStore.getState().setFieldEnabled(!fieldEnabled)
+        }
         onClear={() => {
           useSolarHouseStore.getState().setProbe(null);
           useSolarHouseStore.getState().armProbe(false);
+          useSolarHouseStore.getState().setFieldEnabled(false);
         }}
       />
       <TerrainDiagnostics />

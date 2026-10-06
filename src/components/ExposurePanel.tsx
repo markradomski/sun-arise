@@ -2,29 +2,52 @@ import type { PointExposure } from "../solar/exposure";
 import type { CivilZone } from "../solar/timezone";
 import { civilParts } from "../solar/timezone";
 
+export interface FieldSummary {
+  cols: number;
+  rows: number;
+  pointCount: number;
+  spacingMeters: number;
+  extentMeters: number;
+  sunSamples: number;
+  minMinutes: number;
+  maxMinutes: number;
+  computeMs: number;
+}
+
 interface Props {
   exposure: PointExposure | null;
   zone: CivilZone;
   armed: boolean;
+  field: FieldSummary | null;
+  fieldEnabled: boolean;
   onArm: () => void;
   onClear: () => void;
+  onToggleField: () => void;
 }
 
 export default function ExposurePanel(props: Props) {
-  if (!props.exposure) {
+  if (!props.exposure && !props.field) {
     return (
-      <button
-        className={`probe-toggle ${props.armed ? "armed" : ""}`}
-        onClick={props.onArm}
-      >
-        <span className="probe-dot" />
-        {props.armed ? "Click the ground" : "Sun probe"}
-      </button>
+      <div className="probe-actions">
+        <button
+          className={`probe-toggle ${props.armed ? "armed" : ""}`}
+          onClick={props.onArm}
+        >
+          <span className="probe-dot" />
+          {props.armed ? "Click the ground" : "Sun probe"}
+        </button>
+        <button
+          className={`probe-toggle ${props.fieldEnabled ? "armed" : ""}`}
+          onClick={props.onToggleField}
+        >
+          Ground field
+        </button>
+      </div>
     );
   }
 
   const e = props.exposure;
-  const sun = e.intervals.filter((i) => i.state === "SUN");
+  const sun = e?.intervals.filter((i) => i.state === "SUN") ?? [];
 
   return (
     <div className="probe-panel">
@@ -34,35 +57,71 @@ export default function ExposurePanel(props: Props) {
         <button onClick={props.onClear}>×</button>
       </div>
 
-      <div className="probe-row">
-        <span>Date</span>
-        <span>{formatDate(e.date, props.zone.timeZone)}</span>
-      </div>
-      <div className="probe-row">
-        <span>Daylight</span>
-        <span>{formatDuration(e.daylightMinutes)}</span>
-      </div>
-      <div className="probe-row">
-        <span>Direct sun</span>
-        <span>{formatDuration(e.directSunMinutes)}</span>
-      </div>
-      <div className="probe-row">
-        <span>Share</span>
-        <span>{(e.directSunFraction * 100).toFixed(0)}%</span>
-      </div>
+      {props.field && (
+        <>
+          <div className="probe-row">
+            <span>Grid</span>
+            <span>
+              {props.field.cols}×{props.field.rows} · {props.field.pointCount} pts
+            </span>
+          </div>
+          <div className="probe-row">
+            <span>Coverage</span>
+            <span>
+              {props.field.extentMeters} m @ {props.field.spacingMeters} m
+            </span>
+          </div>
+          <div className="probe-row">
+            <span>Sun samples</span>
+            <span>{props.field.sunSamples}</span>
+          </div>
+          <div className="probe-row">
+            <span>Field range</span>
+            <span>
+              {formatDuration(props.field.minMinutes)} – {formatDuration(props.field.maxMinutes)}
+            </span>
+          </div>
+          <div className="probe-row">
+            <span>Compute</span>
+            <span>{props.field.computeMs.toFixed(0)} ms</span>
+          </div>
+          <div className="probe-divider" />
+        </>
+      )}
 
-      <div className="probe-intervals">
-        {sun.length === 0 && <span className="probe-note">No direct sun.</span>}
-        {sun.map((interval) => (
-          <span key={interval.start.toISOString()}>
-            {formatTime(interval.start, props.zone.timeZone)}–
-            {formatTime(interval.end, props.zone.timeZone)}
-          </span>
-        ))}
-      </div>
+      {e && (
+        <>
+          <div className="probe-row">
+            <span>Date</span>
+            <span>{formatDate(e.date, props.zone.timeZone)}</span>
+          </div>
+          <div className="probe-row">
+            <span>Daylight</span>
+            <span>{formatDuration(e.daylightMinutes)}</span>
+          </div>
+          <div className="probe-row">
+            <span>Probe sun</span>
+            <span>{formatDuration(e.directSunMinutes)}</span>
+          </div>
+          <div className="probe-row">
+            <span>Share</span>
+            <span>{(e.directSunFraction * 100).toFixed(0)}%</span>
+          </div>
+
+          <div className="probe-intervals">
+            {sun.length === 0 && <span className="probe-note">No direct sun.</span>}
+            {sun.map((interval) => (
+              <span key={interval.start.toISOString()}>
+                {formatTime(interval.start, props.zone.timeZone)}–
+                {formatTime(interval.end, props.zone.timeZone)}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
 
       <p className="probe-note">
-        Sampled every {e.sampleIntervalMinutes} min · house only
+        {props.fieldEnabled ? "Field on · " : ""}house only
       </p>
     </div>
   );

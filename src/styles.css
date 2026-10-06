@@ -376,3 +376,18 @@ input[type="date"]:focus {
 }
 .probe-note { margin: 8px 0 0; color: #777d85; }
 .probe-dot { width: 7px; height: 7px; border-radius: 999px; background: #ffd36a; flex: none; }
+.probe-actions {
+  position: absolute;
+  z-index: 10;
+  right: 20px;
+  bottom: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.probe-actions .probe-toggle { position: static; }
+.probe-divider {
+  margin: 8px 0;
+  border-top: 1px solid rgba(255,255,255,.09);
+}
