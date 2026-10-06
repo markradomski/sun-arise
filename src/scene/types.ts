@@ -8,6 +8,12 @@
 
 export type ObjectType = "house" | "tree" | "wall" | "solar-panel";
 
+/**
+ * Named camera states. Lives here rather than in `cesium/` so the store can
+ * reference it without importing from the renderer.
+ */
+export type CameraMode = "ORBIT" | "REGION" | "SITE" | "HOUSE" | "SOLAR";
+
 export interface GeoPosition {
   latitude: number;
   longitude: number;

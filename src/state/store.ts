@@ -2,12 +2,11 @@ import { create } from "zustand";
 import {
   DEFAULT_ROTATION,
   nextObjectId,
+  type CameraMode,
   type GeoPosition,
   type SceneObject,
 } from "../scene/types";
 import { catalogEntry, DEFAULT_HOUSE_SLUG } from "../houses/catalog";
-
-export type CameraMode = "ORBIT" | "REGION" | "SITE" | "HOUSE";
 
 export interface SolarHouseState {
   objects: Record<string, SceneObject>;
@@ -30,7 +29,8 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   objects: {},
   order: [],
   selectedId: null,
-  cameraMode: "ORBIT",
+  // Matches the view the app actually opens at; see CameraController.
+  cameraMode: "SITE",
   site: null,
 
   addObject(object) {
