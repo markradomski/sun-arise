@@ -1,7 +1,6 @@
 import {
   Cartesian3,
   Color,
-  Ion,
   JulianDate,
   Math as CesiumMath,
   ShadowMode,
@@ -9,13 +8,8 @@ import {
   type TerrainProvider,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
-import { createTerrain } from "./terrain";
-
-export interface PickedLocation {
-  latitude: number;
-  longitude: number;
-  height: number;
-}
+import { createTerrain, type TerrainSetup } from "./terrain";
+import { DEFAULT_SITE } from "../scene/site";
 
 /**
  * Owns the Cesium viewer, terrain and globe-level rendering concerns.
@@ -29,9 +23,6 @@ export class CesiumScene {
   private terrainProvider?: TerrainProvider;
 
   constructor(container: HTMLElement) {
-    const token = import.meta.env.VITE_CESIUM_ION_TOKEN as string | undefined;
-    if (token) Ion.defaultAccessToken = token;
-
     this.viewer = new Viewer(container, {
       animation: false,
       timeline: false,
@@ -68,7 +59,11 @@ export class CesiumScene {
     this.viewer.shadowMap.normalOffset = true;
 
     this.viewer.camera.setView({
-      destination: Cartesian3.fromDegrees(151.2093, -33.8688, 2_000_000),
+      destination: Cartesian3.fromDegrees(
+        DEFAULT_SITE.longitude,
+        DEFAULT_SITE.latitude,
+        2_000_000,
+      ),
     });
 
     // No input handling here by design — DragController owns all pointer
@@ -80,13 +75,13 @@ export class CesiumScene {
    * Terrain loads asynchronously, so it is applied after construction. The
    * viewer renders on the ellipsoid until this resolves.
    */
-  async initTerrain(): Promise<boolean> {
-    const { provider, hasWorldTerrain } = await createTerrain();
-    if (this.destroyed) return false;
+  async initTerrain(): Promise<TerrainSetup> {
+    const setup = await createTerrain();
+    if (this.destroyed) return setup;
 
-    this.terrainProvider = provider;
-    this.viewer.terrainProvider = provider;
-    return hasWorldTerrain;
+    this.terrainProvider = setup.provider;
+    this.viewer.terrainProvider = setup.provider;
+    return setup;
   }
 
   getTerrainProvider(): TerrainProvider | undefined {

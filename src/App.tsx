@@ -8,22 +8,25 @@ import { CesiumScene } from "./cesium/CesiumScene";
 import { DragController } from "./cesium/DragController";
 import { ObjectLayer } from "./cesium/ObjectLayer";
 import { SelectionOverlay } from "./cesium/SelectionOverlay";
-import { approxHeight, settleHeight } from "./cesium/terrain";
+import { loadedHeight } from "./cesium/terrain";
+import { TerrainSampler } from "./cesium/TerrainSampler";
 import { SolarClock } from "./solar/SolarClock";
 import { solarPosition } from "./solar/solarPosition";
 import { civilZone, withCivilDate, withCivilMinutes } from "./solar/timezone";
-import type { GeoPosition } from "./scene/types";
+import { terrainPolicyFor, type GeoPosition } from "./scene/types";
+import { DEFAULT_SITE } from "./scene/site";
 import {
   selectOrderedObjects,
   selectSelectedObject,
   useSolarHouseStore,
 } from "./state/store";
 import Controls from "./components/Controls";
+import TerrainDiagnostics from "./components/TerrainDiagnostics";
 
 const INITIAL_DATE = new Date();
 INITIAL_DATE.setHours(12, 0, 0, 0);
 
-const INITIAL_SITE = { latitude: -33.8688, longitude: 151.2093, height: 0 };
+const INITIAL_SITE = DEFAULT_SITE;
 
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -32,6 +35,7 @@ export default function App() {
   const dragRef = useRef<DragController | null>(null);
   const overlayRef = useRef<SelectionOverlay | null>(null);
   const cameraRef = useRef<CameraController | null>(null);
+  const settleRef = useRef<((id: string) => Promise<void>) | null>(null);
 
   const [date, setDate] = useState(INITIAL_DATE);
   const [playing, setPlaying] = useState(false);
@@ -90,24 +94,59 @@ export default function App() {
       Object.assign(globalThis, { __solarHouseCamera: camera });
     }
 
-    // Open at SITE rather than in orbit. The model's position is only
-    // meaningful once it has loaded and settled onto terrain, so wait for
-    // readiness and then set the view directly — no fly-from-space.
+    // Objects whose initial terrain placement has been attempted, whatever the
+    // outcome. Framing waits on this: a house placed before terrain resolves
+    // sits at ellipsoid height, and framing that elevation leaves the camera
+    // near ground level while the house rises out of shot once terrain lands.
+    const placementResolved = new Set<string>();
+
+    // Open at SITE rather than in orbit, set directly — no fly-from-space.
     let framed = false;
     const stopInitialFraming = scene.viewer.scene.postRender.addEventListener(() => {
       if (framed || disposed) return;
       const state = useSolarHouseStore.getState();
       const first = state.order[0] ? state.objects[state.order[0]] : undefined;
       if (!first || !layer.isReady(first.id)) return;
+      if (!placementResolved.has(first.id)) return;
 
       camera.setTo(DEFAULT_CAMERA_MODE, first.position);
       framed = true;
       stopInitialFraming();
     });
 
+    const sampler = new TerrainSampler(
+      () => scene.getTerrainProvider(),
+      () => useSolarHouseStore.getState().terrainStatus,
+    );
+
+    async function settlePlacement(id: string) {
+      if (disposed) return;
+      try {
+        const object = useSolarHouseStore.getState().objects[id];
+        if (!object?.clampToGround) return;
+
+        const terrain = await sampler.analyse(object);
+        if (disposed || !terrain) return;
+
+        const store = useSolarHouseStore.getState();
+        store.setObjectTerrain(id, terrain);
+
+        // Houses sit level; only the elevation follows the ground.
+        const current = store.objects[id];
+        if (!current || terrainPolicyFor(current.type) !== "LEVEL") return;
+        store.updateObject(id, {
+          position: { ...current.position, height: terrain.levelElevation },
+        });
+      } finally {
+        placementResolved.add(id);
+      }
+    }
+
+    settleRef.current = settlePlacement;
+
     const drag = new DragController({
       scene: scene.scene,
-      getTerrainProvider: () => scene.getTerrainProvider(),
+      getTerrainStatus: () => useSolarHouseStore.getState().terrainStatus,
       onGroundClick: (location) => {
         const store = useSolarHouseStore.getState();
         store.setSite({ latitude: location.latitude, longitude: location.longitude });
@@ -118,39 +157,26 @@ export default function App() {
 
         void settlePlacement(id);
       },
+      onPlacementSettled: (id) => void settlePlacement(id),
     });
     dragRef.current = drag;
 
-    async function settlePlacement(id: string) {
-      const provider = scene.getTerrainProvider();
-      if (!provider || disposed) return;
-
-      const object = useSolarHouseStore.getState().objects[id];
-      if (!object?.clampToGround) return;
-
-      const height = await settleHeight(
-        provider,
-        object.position.latitude,
-        object.position.longitude,
-      );
-      if (disposed) return;
-      useSolarHouseStore.getState().updateObject(id, { position: { ...object.position, height } });
-    }
-
     scene
       .initTerrain()
-      .then((hasWorldTerrain) => {
+      .then(({ status, providerName }) => {
         if (disposed) return;
-        if (!hasWorldTerrain) {
-          console.info(
-            "[solar-house] No Cesium ion token — running on the WGS84 ellipsoid. " +
-              "Set VITE_CESIUM_ION_TOKEN for real terrain.",
-          );
-        }
-        // Re-settle anything placed before terrain finished loading.
+        useSolarHouseStore.getState().setTerrainStatus(status, providerName);
         for (const id of useSolarHouseStore.getState().order) void settlePlacement(id);
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error(error);
+        if (!disposed) {
+          useSolarHouseStore
+            .getState()
+            .setTerrainStatus("UNAVAILABLE", "terrain initialisation failed");
+          for (const id of useSolarHouseStore.getState().order) void settlePlacement(id);
+        }
+      });
 
     // Strict Mode remounts this effect with the store already populated, so
     // seed only once and always sync the fresh layer against current state.
@@ -169,6 +195,7 @@ export default function App() {
       stopOverlay();
       stopInitialFraming();
       drag.destroy();
+      sampler.dispose();
       overlay.destroy();
       layer.destroy();
       scene.destroy();
@@ -218,8 +245,11 @@ export default function App() {
   const handlePlace = () => {
     const scene = sceneRef.current;
     const site = useSolarHouseStore.getState().site ?? INITIAL_SITE;
-    const height = scene ? approxHeight(scene.globe, site.latitude, site.longitude) : 0;
-    addHouse({ latitude: site.latitude, longitude: site.longitude, height });
+    const height = scene
+      ? loadedHeight(scene.globe, site.latitude, site.longitude) ?? 0
+      : 0;
+    const id = addHouse({ latitude: site.latitude, longitude: site.longitude, height });
+    void settleRef.current?.(id);
   };
 
   const handleHeading = (heading: number) => {
@@ -253,8 +283,9 @@ export default function App() {
         onPlace={handlePlace}
         onCameraMode={handleCameraMode}
       />
+      <TerrainDiagnostics />
       <div className="north">N</div>
-      <div className="location-pill">Sydney · MVP starting location</div>
+      <div className="location-pill">The Domain · Sydney</div>
     </main>
   );
 }

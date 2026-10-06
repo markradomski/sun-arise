@@ -5,7 +5,9 @@ import {
   type CameraMode,
   type GeoPosition,
   type SceneObject,
+  type TerrainStatus,
 } from "../scene/types";
+import type { FootprintTerrain } from "../scene/terrainAnalysis";
 import { catalogEntry, DEFAULT_HOUSE_SLUG } from "../houses/catalog";
 
 export interface SolarHouseState {
@@ -15,6 +17,10 @@ export interface SolarHouseState {
   selectedId: string | null;
   cameraMode: CameraMode;
   site: { latitude: number; longitude: number } | null;
+  terrainStatus: TerrainStatus;
+  terrainProviderName: string;
+  /** Footprint analysis per object; absent until terrain has been sampled. */
+  terrain: Record<string, FootprintTerrain>;
 
   addObject(object: Omit<SceneObject, "id">): string;
   addHouse(position: GeoPosition, slug?: string): string;
@@ -23,6 +29,8 @@ export interface SolarHouseState {
   select(id: string | null): void;
   setCameraMode(mode: CameraMode): void;
   setSite(site: { latitude: number; longitude: number } | null): void;
+  setTerrainStatus(status: TerrainStatus, providerName?: string): void;
+  setObjectTerrain(id: string, terrain: FootprintTerrain | null): void;
 }
 
 export const useSolarHouseStore = create<SolarHouseState>((set) => ({
@@ -32,6 +40,9 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   // Matches the view the app actually opens at; see CameraController.
   cameraMode: "SITE",
   site: null,
+  terrainStatus: "LOADING",
+  terrainProviderName: "",
+  terrain: {},
 
   addObject(object) {
     const id = nextObjectId(object.type);
@@ -90,8 +101,11 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
       if (!state.objects[id]) return state;
       const objects = { ...state.objects };
       delete objects[id];
+      const terrain = { ...state.terrain };
+      delete terrain[id];
       return {
         objects,
+        terrain,
         order: state.order.filter((entry) => entry !== id),
         selectedId: state.selectedId === id ? null : state.selectedId,
       };
@@ -108,6 +122,22 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
 
   setSite(site) {
     set({ site });
+  },
+
+  setTerrainStatus(status, providerName) {
+    set((state) => ({
+      terrainStatus: status,
+      terrainProviderName: providerName ?? state.terrainProviderName,
+    }));
+  },
+
+  setObjectTerrain(id, terrain) {
+    set((state) => {
+      const next = { ...state.terrain };
+      if (terrain) next[id] = terrain;
+      else delete next[id];
+      return { terrain: next };
+    });
   },
 }));
 

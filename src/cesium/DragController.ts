@@ -5,11 +5,10 @@ import {
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
   type Scene,
-  type TerrainProvider,
 } from "cesium";
-import type { SceneObject } from "../scene/types";
+import type { SceneObject, TerrainStatus } from "../scene/types";
 import { useSolarHouseStore } from "../state/store";
-import { approxHeight, settleHeight } from "./terrain";
+import { loadedHeight } from "./terrain";
 
 /**
  * All pointer interaction with scene objects.
@@ -46,13 +45,15 @@ interface PinchState {
 
 export interface DragControllerOptions {
   scene: Scene;
-  getTerrainProvider: () => TerrainProvider | undefined;
+  getTerrainStatus: () => TerrainStatus;
   /** Fired for a click that did not land on a scene object. */
   onGroundClick?: (location: {
     latitude: number;
     longitude: number;
     height: number;
   }) => void;
+  /** Fired once an object has finished moving, for full footprint analysis. */
+  onPlacementSettled?: (id: string) => void;
 }
 
 export class DragController {
@@ -154,17 +155,18 @@ export class DragController {
     const ground = this.pickGround(event.endPosition);
     if (!ground) return;
 
+    const object = store.objects[drag.id];
+    if (!object) return;
+
+    // Only the resident-tile height during a drag; the full footprint sample
+    // runs once on release. An unknown height keeps the previous elevation
+    // rather than dropping the object to the ellipsoid.
+    const height =
+      loadedHeight(this.options.scene.globe, ground.latitude, ground.longitude) ??
+      object.position.height;
+
     store.updateObject(drag.id, {
-      position: {
-        latitude: ground.latitude,
-        longitude: ground.longitude,
-        // Cheap synchronous height while dragging; settled precisely on release.
-        height: approxHeight(
-          this.options.scene.globe,
-          ground.latitude,
-          ground.longitude,
-        ),
-      },
+      position: { latitude: ground.latitude, longitude: ground.longitude, height },
     });
   }
 
@@ -173,7 +175,9 @@ export class DragController {
     this.drag = null;
     this.options.scene.screenSpaceCameraController.enableInputs = true;
 
-    if (drag?.mode === "move" && drag.moved) void this.settle(drag.id);
+    if (drag?.mode === "move" && drag.moved) {
+      this.options.onPlacementSettled?.(drag.id);
+    }
   }
 
   private onClick(event: any) {
@@ -192,7 +196,8 @@ export class DragController {
     this.options.onGroundClick?.({
       latitude: ground.latitude,
       longitude: ground.longitude,
-      height: approxHeight(this.options.scene.globe, ground.latitude, ground.longitude),
+      height:
+        loadedHeight(this.options.scene.globe, ground.latitude, ground.longitude) ?? 0,
     });
   }
 
@@ -280,9 +285,17 @@ export class DragController {
   private pickGround(windowPosition: any) {
     const { scene } = this.options;
     const ray = scene.camera.getPickRay(windowPosition);
+    const surface = ray ? scene.globe.pick(ray, scene) : undefined;
+
+    // globe.pick misses while terrain tiles are still loading. Falling back to
+    // the ellipsoid there would hand back a sea-level position indistinguishable
+    // from a real one, so outside APPROXIMATE mode the gesture is dropped and
+    // the caller keeps the position it already had.
     const cartesian =
-      (ray ? scene.globe.pick(ray, scene) : undefined) ??
-      scene.camera.pickEllipsoid(windowPosition, scene.globe.ellipsoid);
+      surface ??
+      (this.options.getTerrainStatus() === "APPROXIMATE"
+        ? scene.camera.pickEllipsoid(windowPosition, scene.globe.ellipsoid)
+        : undefined);
     if (!cartesian) return undefined;
 
     const carto = Cartographic.fromCartesian(cartesian);
@@ -292,26 +305,6 @@ export class DragController {
     };
   }
 
-  private async settle(id: string) {
-    const provider = this.options.getTerrainProvider();
-    if (!provider || this.destroyed) return;
-
-    const object = useSolarHouseStore.getState().objects[id];
-    if (!object?.clampToGround) return;
-
-    const height = await settleHeight(
-      provider,
-      object.position.latitude,
-      object.position.longitude,
-    );
-    if (this.destroyed) return;
-
-    const current = useSolarHouseStore.getState().objects[id];
-    if (!current) return;
-    useSolarHouseStore
-      .getState()
-      .updateObject(id, { position: { ...current.position, height } });
-  }
 
   destroy() {
     this.destroyed = true;

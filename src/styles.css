@@ -262,3 +262,57 @@ input[type="date"]:focus {
   margin-top: 6px;
   font-size: 12px;
 }
+
+/* Terrain diagnostics */
+.terrain-toggle, .terrain-panel {
+  position: absolute;
+  z-index: 10;
+  right: 20px;
+  bottom: 20px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 12px;
+  background: rgba(10,12,15,.86);
+  backdrop-filter: blur(22px);
+  color: #d0ccc0;
+  font-size: 12px;
+}
+.terrain-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.terrain-toggle:hover { color: #f2efe7; }
+.terrain-panel { width: 230px; padding: 10px 12px 12px; }
+.terrain-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+  color: #f2efe7;
+  letter-spacing: .04em;
+}
+.terrain-head button {
+  margin-left: auto;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: #777d85;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.terrain-head button:hover { color: #f2efe7; }
+.terrain-row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.terrain-row span:first-child { color: #777d85; }
+.terrain-note { margin: 6px 0 0; color: #777d85; }
+.terrain-dot { width: 7px; height: 7px; border-radius: 999px; background: #777d85; flex: none; }
+.terrain-dot.ready { background: #6ee7a0; }
+.terrain-dot.loading { background: #ffd36a; }
+.terrain-dot.approximate { background: #8e949c; }
+.terrain-dot.unavailable { background: #e8795a; }

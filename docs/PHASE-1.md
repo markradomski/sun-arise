@@ -655,24 +655,101 @@ model depth.
 
 ---
 
-## Appendix C — terrain limitations (unresolved)
+## Appendix C — terrain
 
-No ion token is configured, so the app runs on `EllipsoidTerrainProvider` and
-everything below is **unverified against real elevation**.
+### Provider and state
 
-- `createWorldTerrainAsync()` is wired and falls back cleanly, logging which
-  path it took. Set `VITE_CESIUM_ION_TOKEN` in `.env` (never committed; only the
-  variable name appears in `.env.example`).
-- `globe.pick(ray)` returns nothing when terrain tiles have not loaded, which
-  happens often on Cesium's shared default token. Ground placement still works
-  because `DragController` falls back to `pickEllipsoid` — worth remembering,
-  because it means placement silently degrades to sea-level geometry rather
-  than failing loudly.
-- **Houses stay level.** `settleHeight` samples a single point, so on a slope
-  one corner floats and the opposite buries. Per Phase 1 scope there is no
-  cut-and-fill system and no tilting-to-slope: a tilted house reads as a bug
-  even when geometrically "correct", because real houses are built level on a
-  graded pad.
-- `SceneObject.rotation` already carries `pitch`/`roll` end to end, so
-  terrain-following objects (ground-mounted solar arrays, decks) need no data
-  model change when that work starts — only a per-type policy.
+Terrain is Cesium World Terrain when `VITE_CESIUM_ION_TOKEN` is set in `.env`
+(never committed; only the variable name appears in `.env.example`), and the
+WGS84 ellipsoid otherwise. `Ion.defaultAccessToken` is assigned only when a
+token exists.
+
+`store.terrainStatus` carries which of these is in force:
+
+| Status | Meaning |
+|---|---|
+| `LOADING` | real terrain requested, not resolvable yet |
+| `READY` | real terrain available for placement and analysis |
+| `UNAVAILABLE` | real terrain requested but failed |
+| `APPROXIMATE` | deliberately on the ellipsoid; no token configured |
+
+Nothing downstream may treat an ellipsoid result as a real-terrain measurement.
+`DragController.pickGround` therefore substitutes `camera.pickEllipsoid` for a
+missed `globe.pick(ray)` **only** in `APPROXIMATE` mode. In every other state a
+miss drops the gesture and the object keeps its previous position, because
+`globe.pick` also misses while tiles are still streaming and a sea-level
+fallback there is indistinguishable from a real result.
+
+### Footprint sampling
+
+A single centre elevation does not describe the ground under a building, so
+houses are sampled at nine points — four corners, four edge midpoints, centre —
+derived from the catalog `footprint` and rotated by the object's heading.
+
+`scene/footprint.ts` returns sample offsets in **east/north metres** rather than
+the object's own frame, so `scene/terrainAnalysis.ts` can report a true
+downslope bearing without needing the heading a second time.
+
+`sampleTerrainMostDetailed` takes an array, so nine points cost one request.
+It throws outright on `EllipsoidTerrainProvider` ("requires a terrain provider
+that has tile availability"), which is why analysis is skipped rather than
+attempted outside `READY`.
+
+Elevation is never inferred from rendered model geometry: the glazing is
+`alphaMode: BLEND` and the translucent pass writes no depth, so
+`scene.pickPosition` returns a constant over the model.
+
+### Analysis
+
+`scene/terrainAnalysis.ts` takes measured samples and returns min, max, mean,
+median, range, slope magnitude and downslope bearing, retaining the samples
+alongside the derived values. Slope comes from a least-squares plane through
+the samples; a degenerate set reports level rather than inventing a direction.
+
+Classification thresholds live in `SLOPE_THRESHOLDS_DEG`: `FLAT` below 2°,
+`GENTLE` below 5°, `MODERATE` below 15°, `STEEP` above. These are geometric
+descriptions and imply nothing about engineering suitability, planning
+compliance or buildability — the numeric values are always shown alongside.
+
+### Level placement
+
+Houses stay level; `terrainPolicyFor` returns `LEVEL` for them and nothing
+rotates a house to a terrain normal. The placement elevation is the **maximum**
+of the footprint samples, so the building never cuts into the ground. On steeper
+sites its low side will visibly stand clear of the surface: foundations,
+earthworks and cut/fill are not simulated, and that gap is the honest
+representation of what is missing rather than something to hide.
+
+`SceneObject.rotation` already carries `pitch`/`roll` end to end, so
+terrain-following object types need a policy, not a data-model change.
+
+### Asynchronous ordering
+
+Sampling is asynchronous and a house can move again mid-request. `TerrainSampler`
+issues a token per object per request and discards any result whose token is no
+longer current, so a slow result for an old position cannot overwrite a newer
+one. Stale requests are ignored on arrival rather than cancelled in flight.
+
+Full nine-point analysis runs on drag end, not per pointer event. During a drag
+elevation comes from `globe.getHeight`, which reads only resident tiles and
+returns `undefined` — not `0` — when the covering tile has not loaded, so an
+unknown height leaves the previous elevation in place.
+
+### Observed behaviour on real terrain
+
+Measured with Cesium World Terrain, nine samples resolving at every site:
+
+| Site | Elevation | Footprint range | Slope | Class |
+|---|---|---|---|---|
+| Nullarbor plain | 102.2 m | 0.41 m | 0.7° | `FLAT` |
+| Sydney CBD | 44.5 m | 0.70 m | 2.4° | `GENTLE` |
+| Hobart foothills | 387.9 m | 4.09 m | 14.2° | `MODERATE` |
+| Matterhorn flank | 4349.7 m | 18.21 m | 48.5° | `STEEP` |
+
+A summit plateau reads `GENTLE` despite high elevation (Mt Wellington, 1261.7 m,
+0.93 m range, 3.4°), which is the intended behaviour: the classification
+describes the ground under the footprint, not the landform around it.
+
+Note that a 14° site already produces a 4 m elevation range across a 14 × 9 m
+footprint, so the level-placement gap on the downhill side is substantial well
+before terrain looks dramatic.

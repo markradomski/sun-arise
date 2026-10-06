@@ -14,6 +14,25 @@ export type ObjectType = "house" | "tree" | "wall" | "solar-panel";
  */
 export type CameraMode = "ORBIT" | "REGION" | "SITE" | "HOUSE" | "SOLAR";
 
+/**
+ * LOADING      real terrain requested, tiles not resolvable yet
+ * READY        real terrain available for placement and analysis
+ * UNAVAILABLE  real terrain requested but failed
+ * APPROXIMATE  deliberately on the ellipsoid; no ion token configured
+ */
+export type TerrainStatus = "LOADING" | "READY" | "UNAVAILABLE" | "APPROXIMATE";
+
+/**
+ * How an object's elevation relates to the ground beneath it. Only LEVEL is
+ * implemented; the type exists so generic scene code does not bake in the
+ * house behaviour.
+ */
+export type TerrainPolicy = "LEVEL" | "FOLLOW_GROUND_POINT";
+
+export function terrainPolicyFor(type: ObjectType): TerrainPolicy {
+  return type === "house" ? "LEVEL" : "FOLLOW_GROUND_POINT";
+}
+
 export interface GeoPosition {
   latitude: number;
   longitude: number;

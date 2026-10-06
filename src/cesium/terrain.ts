@@ -1,79 +1,75 @@
 import {
   Cartographic,
   EllipsoidTerrainProvider,
-  Math as CesiumMath,
+  Ion,
   createWorldTerrainAsync,
   sampleTerrainMostDetailed,
   type Globe,
   type TerrainProvider,
 } from "cesium";
-
-/**
- * Terrain height sampling comes in two flavours, and using the wrong one is the
- * classic way to make dragging stutter:
- *
- *   approxHeight  — synchronous, reads only currently-loaded tiles. Use during
- *                   a drag, every frame.
- *   settleHeight  — asynchronous and precise. Use once, on drag end.
- */
+import type { TerrainStatus } from "../scene/types";
 
 export interface TerrainSetup {
   provider: TerrainProvider;
-  /** False when no ion token is configured and we fell back to the ellipsoid. */
-  hasWorldTerrain: boolean;
+  /** APPROXIMATE when no token is configured, UNAVAILABLE when loading failed. */
+  status: Extract<TerrainStatus, "READY" | "UNAVAILABLE" | "APPROXIMATE">;
+  providerName: string;
 }
 
 export async function createTerrain(): Promise<TerrainSetup> {
-  const token = import.meta.env.VITE_CESIUM_ION_TOKEN as string | undefined;
+  const token = (import.meta.env.VITE_CESIUM_ION_TOKEN as string | undefined)?.trim();
 
   if (!token) {
-    return { provider: new EllipsoidTerrainProvider(), hasWorldTerrain: false };
+    return {
+      provider: new EllipsoidTerrainProvider(),
+      status: "APPROXIMATE",
+      providerName: "WGS84 ellipsoid",
+    };
   }
+
+  Ion.defaultAccessToken = token;
 
   try {
-    return { provider: await createWorldTerrainAsync(), hasWorldTerrain: true };
+    return {
+      provider: await createWorldTerrainAsync(),
+      status: "READY",
+      providerName: "Cesium World Terrain",
+    };
   } catch (error) {
-    console.warn(
-      "[terrain] World terrain failed to load; falling back to the ellipsoid.",
-      error,
-    );
-    return { provider: new EllipsoidTerrainProvider(), hasWorldTerrain: false };
+    console.warn("[terrain] World terrain failed to load.", error);
+    return {
+      provider: new EllipsoidTerrainProvider(),
+      status: "UNAVAILABLE",
+      providerName: "WGS84 ellipsoid (world terrain unavailable)",
+    };
   }
 }
 
-/** Synchronous best-effort height. Safe to call every frame. */
-export function approxHeight(globe: Globe, latitude: number, longitude: number): number {
-  const carto = Cartographic.fromDegrees(longitude, latitude);
-  return globe.getHeight(carto) ?? 0;
-}
-
-/** Precise height. Await this once, when a drag ends. */
-export async function settleHeight(
-  provider: TerrainProvider,
+/**
+ * Synchronous best-effort height from tiles already resident. Safe to call
+ * every frame during a drag; returns undefined rather than 0 when the tile
+ * covering the point has not loaded, so callers can tell "ground is at sea
+ * level" from "we do not know yet".
+ */
+export function loadedHeight(
+  globe: Globe,
   latitude: number,
   longitude: number,
-): Promise<number> {
-  if (provider instanceof EllipsoidTerrainProvider) return 0;
-
-  try {
-    const [sampled] = await sampleTerrainMostDetailed(provider, [
-      Cartographic.fromDegrees(longitude, latitude),
-    ]);
-    return sampled?.height ?? 0;
-  } catch (error) {
-    console.warn("[terrain] settleHeight failed; keeping approximate height.", error);
-    return approxHeightFallback(latitude, longitude);
-  }
+): number | undefined {
+  return globe.getHeight(Cartographic.fromDegrees(longitude, latitude));
 }
 
-function approxHeightFallback(_latitude: number, _longitude: number): number {
-  return 0;
-}
+/**
+ * Precise elevations for a batch of positions. One request covers all of them,
+ * which is why footprint sampling costs the same as sampling a single point.
+ */
+export async function sampleElevations(
+  provider: TerrainProvider,
+  positions: { latitude: number; longitude: number }[],
+): Promise<(number | undefined)[]> {
+  if (positions.length === 0) return [];
 
-export function toCartographicDegrees(carto: Cartographic) {
-  return {
-    latitude: CesiumMath.toDegrees(carto.latitude),
-    longitude: CesiumMath.toDegrees(carto.longitude),
-    height: carto.height,
-  };
+  const carto = positions.map((p) => Cartographic.fromDegrees(p.longitude, p.latitude));
+  const sampled = await sampleTerrainMostDetailed(provider, carto);
+  return sampled.map((s) => (Number.isFinite(s?.height) ? s.height : undefined));
 }
