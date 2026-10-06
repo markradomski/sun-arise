@@ -8,7 +8,7 @@ function luminance([r, g, b]: [number, number, number]): number {
 
 describe("exposureRamp", () => {
   it("brightens monotonically with hours of sun", () => {
-    const steps = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((h) => luminance(colourForHours(h)));
+    const steps = [0, 2, 4, 6, 8, 10, 12, 14].map((h) => luminance(colourForHours(h)));
     for (let i = 1; i < steps.length; i += 1) {
       expect(steps[i]).toBeGreaterThan(steps[i - 1]);
     }
@@ -23,17 +23,25 @@ describe("exposureRamp", () => {
 
   it("clamps outside the ramp rather than extrapolating", () => {
     expect(colourForHours(-3)).toEqual(colourForHours(0));
-    expect(colourForHours(99)).toEqual(colourForHours(8));
+    expect(colourForHours(99)).toEqual(colourForHours(14));
   });
 
   it("stays within a single hue family", () => {
     // Red >= green >= blue at every step keeps the ramp on one amber hue
     // rather than drifting into a rainbow.
-    for (const hours of [0, 2, 4, 6, 8]) {
+    for (const hours of [0, 2, 4, 6, 8, 10, 12, 14]) {
       const [r, g, b] = colourForHours(hours);
       expect(r).toBeGreaterThanOrEqual(g);
       expect(g).toBeGreaterThanOrEqual(b);
     }
+  });
+
+  it("keeps summer and winter distinguishable above eight hours", () => {
+    // Sydney midsummer against midwinter: both exceed 8 h, and the ramp must
+    // still separate them rather than saturating.
+    expect(luminance(colourForHours(14.25))).toBeGreaterThan(
+      luminance(colourForHours(9.75)),
+    );
   });
 
   it("interpolates between stops", () => {
@@ -46,11 +54,13 @@ describe("exposureRamp", () => {
 
   it("publishes one legend band per reference range", () => {
     expect(LEGEND_BANDS.map((b) => b.label)).toEqual([
-      "<2 h",
-      "2–4",
-      "4–6",
-      "6–8",
-      "8+",
+      "2",
+      "4",
+      "6",
+      "8",
+      "10",
+      "12",
+      "14+",
     ]);
     expect(new Set(LEGEND_BANDS.map((b) => b.css)).size).toBe(LEGEND_BANDS.length);
   });

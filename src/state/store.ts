@@ -8,6 +8,7 @@ import {
   type TerrainStatus,
 } from "../scene/types";
 import type { FootprintTerrain } from "../scene/terrainAnalysis";
+import type { Season } from "../solar/seasons";
 import { catalogEntry, DEFAULT_HOUSE_SLUG } from "../houses/catalog";
 
 export interface SolarHouseState {
@@ -26,6 +27,8 @@ export interface SolarHouseState {
   /** The next ground click places the probe rather than a house. */
   probeArmed: boolean;
   fieldEnabled: boolean;
+  /** Active seasonal preset, or null when analysing an arbitrary date. */
+  season: Season | null;
 
   addObject(object: Omit<SceneObject, "id">): string;
   addHouse(position: GeoPosition, slug?: string): string;
@@ -39,6 +42,7 @@ export interface SolarHouseState {
   setProbe(probe: GeoPosition | null): void;
   armProbe(armed: boolean): void;
   setFieldEnabled(enabled: boolean): void;
+  setSeason(season: Season | null): void;
 }
 
 export const useSolarHouseStore = create<SolarHouseState>((set) => ({
@@ -54,6 +58,7 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   probe: null,
   probeArmed: false,
   fieldEnabled: false,
+  season: null,
 
   addObject(object) {
     const id = nextObjectId(object.type);
@@ -152,6 +157,10 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
 
   setFieldEnabled(enabled) {
     set({ fieldEnabled: enabled });
+  },
+
+  setSeason(season) {
+    set({ season });
   },
 
   setObjectTerrain(id, terrain) {

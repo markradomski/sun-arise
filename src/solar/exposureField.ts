@@ -27,6 +27,25 @@ export interface ExposureField {
   computeMs: number;
 }
 
+/**
+ * Ground area receiving at least `hours` of direct sun, in square metres.
+ *
+ * Counted from the analytical samples, each standing for one grid cell, rather
+ * than measured off the rendered heatmap.
+ */
+export function areaAboveHours(
+  field: ExposureField,
+  cellAreaSquareMeters: number,
+  hours: number,
+): number {
+  const threshold = hours * 60;
+  let cells = 0;
+  for (let i = 0; i < field.pointCount; i += 1) {
+    if (field.minutes[i] >= threshold) cells += 1;
+  }
+  return cells * cellAreaSquareMeters;
+}
+
 export function exposureField(
   points: GeoPosition[],
   occluders: BoxOccluder[],

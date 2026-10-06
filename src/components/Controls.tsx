@@ -3,6 +3,7 @@ import type { CameraMode } from "../cesium/CameraController";
 import type { CivilZone } from "../solar/timezone";
 import { formatClockMinutes } from "../solar/solarPosition";
 import { civilParts } from "../solar/timezone";
+import { SEASONS, SEASON_LABELS, type Season } from "../solar/seasons";
 
 interface Props {
   date: Date;
@@ -12,6 +13,8 @@ interface Props {
   cameraMode: CameraMode;
   zone: CivilZone;
   solar: SolarPosition;
+  season: Season | null;
+  onSeason: (season: Season) => void;
   onDate: (year: number, month: number, day: number) => void;
   onTime: (minutes: number) => void;
   onToggle: () => void;
@@ -63,6 +66,21 @@ export default function Controls(props: Props) {
               onClick={() => props.onCameraMode(mode)}
             >
               {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div className="section-label">SEASON</div>
+        <div className="camera-modes">
+          {SEASONS.map((season) => (
+            <button
+              key={season}
+              className={props.season === season ? "active" : ""}
+              onClick={() => props.onSeason(season)}
+            >
+              {SEASON_LABELS[season]}
             </button>
           ))}
         </div>

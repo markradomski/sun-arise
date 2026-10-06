@@ -2,6 +2,8 @@ import type { PointExposure } from "../solar/exposure";
 import type { CivilZone } from "../solar/timezone";
 import { civilParts } from "../solar/timezone";
 import { LEGEND_BANDS } from "../solar/exposureRamp";
+import { SEASON_LABELS } from "../solar/seasons";
+import type { SeasonalPoint } from "../solar/seasonalComparison";
 
 export interface FieldSummary {
   cols: number;
@@ -14,10 +16,14 @@ export interface FieldSummary {
   maxMinutes: number;
   computeMs: number;
   overlayMs: number;
+  /** Ground area in square metres receiving at least eight hours of sun. */
+  areaAbove8hSquareMeters: number;
+  coveredAreaSquareMeters: number;
 }
 
 interface Props {
   exposure: PointExposure | null;
+  seasonal: SeasonalPoint[] | null;
   zone: CivilZone;
   armed: boolean;
   field: FieldSummary | null;
@@ -36,7 +42,7 @@ export default function ExposurePanel(props: Props) {
           onClick={props.onArm}
         >
           <span className="probe-dot" />
-          {props.armed ? "Click the ground" : "Sun probe"}
+          {props.armed ? "Click the ground" : "Inspect point"}
         </button>
         <button
           className={`probe-toggle ${props.fieldEnabled ? "armed" : ""}`}
@@ -50,6 +56,7 @@ export default function ExposurePanel(props: Props) {
 
   const e = props.exposure;
   const sun = e?.intervals.filter((i) => i.state === "SUN") ?? [];
+  const blocked = e?.intervals.filter((i) => i.state === "BLOCKED") ?? [];
 
   return (
     <div className="probe-panel">
@@ -81,6 +88,18 @@ export default function ExposurePanel(props: Props) {
             <span>Field range</span>
             <span>
               {formatDuration(props.field.minMinutes)} – {formatDuration(props.field.maxMinutes)}
+            </span>
+          </div>
+          <div className="probe-row">
+            <span>8+ h area</span>
+            <span>
+              {Math.round(props.field.areaAbove8hSquareMeters)} m² (
+              {(
+                (props.field.areaAbove8hSquareMeters /
+                  props.field.coveredAreaSquareMeters) *
+                100
+              ).toFixed(0)}
+              %)
             </span>
           </div>
           <div className="probe-row">
@@ -122,15 +141,46 @@ export default function ExposurePanel(props: Props) {
             <span>{(e.directSunFraction * 100).toFixed(0)}%</span>
           </div>
 
-          <div className="probe-intervals">
-            {sun.length === 0 && <span className="probe-note">No direct sun.</span>}
-            {sun.map((interval) => (
-              <span key={interval.start.toISOString()}>
-                {formatTime(interval.start, props.zone.timeZone)}–
-                {formatTime(interval.end, props.zone.timeZone)}
-              </span>
-            ))}
+          <div className="probe-interval-group">
+            <span className="probe-interval-label">Sun</span>
+            <div className="probe-intervals">
+              {sun.length === 0 && <span className="probe-note">none</span>}
+              {sun.map((interval) => (
+                <span key={interval.start.toISOString()}>
+                  {formatTime(interval.start, props.zone.timeZone)}–
+                  {formatTime(interval.end, props.zone.timeZone)}
+                </span>
+              ))}
+            </div>
           </div>
+
+          <div className="probe-interval-group">
+            <span className="probe-interval-label">Shade</span>
+            <div className="probe-intervals">
+              {blocked.length === 0 && <span className="probe-note">none</span>}
+              {blocked.map((interval) => (
+                <span key={interval.start.toISOString()}>
+                  {formatTime(interval.start, props.zone.timeZone)}–
+                  {formatTime(interval.end, props.zone.timeZone)}
+                </span>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {props.seasonal && (
+        <>
+          <div className="probe-divider" />
+          <div className="probe-row probe-subhead">
+            <span>THIS LOCATION</span>
+          </div>
+          {props.seasonal.map((entry) => (
+            <div className="probe-row" key={entry.season}>
+              <span>{SEASON_LABELS[entry.season]}</span>
+              <span>{formatDuration(entry.directSunMinutes)}</span>
+            </div>
+          ))}
         </>
       )}
 

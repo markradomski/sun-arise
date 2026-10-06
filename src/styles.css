@@ -408,3 +408,6 @@ input[type="date"]:focus {
   border-radius: 3px;
   display: inline-block;
 }
+.probe-interval-group { display: flex; gap: 8px; margin-top: 6px; }
+.probe-interval-label { flex: none; width: 38px; color: #777d85; }
+.probe-subhead span { color: #f2efe7 !important; letter-spacing: .04em; }

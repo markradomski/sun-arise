@@ -13,9 +13,15 @@ import { ProbeMarker } from "./cesium/ProbeMarker";
 import { TerrainSampler } from "./cesium/TerrainSampler";
 import { SolarClock } from "./solar/SolarClock";
 import { solarPosition } from "./solar/solarPosition";
-import { civilZone, withCivilDate, withCivilMinutes } from "./solar/timezone";
+import { civilParts, civilZone, withCivilDate, withCivilMinutes } from "./solar/timezone";
+import { seasonalDate } from "./solar/seasons";
+import { seasonalPointExposure } from "./solar/seasonalComparison";
 import { pointExposure, sunTimeline } from "./solar/exposure";
-import { exposureField, type ExposureField } from "./solar/exposureField";
+import {
+  areaAboveHours,
+  exposureField,
+  type ExposureField,
+} from "./solar/exposureField";
 import { DEFAULT_GRID, groundGrid, type Grid } from "./scene/grid";
 import { HeatmapOverlay } from "./cesium/HeatmapOverlay";
 import { occluderFor } from "./scene/occluders";
@@ -56,6 +62,7 @@ export default function App() {
   const probeArmed = useSolarHouseStore((s) => s.probeArmed);
   const objects = useSolarHouseStore((s) => s.objects);
   const fieldEnabled = useSolarHouseStore((s) => s.fieldEnabled);
+  const season = useSolarHouseStore((s) => s.season);
   const [field, setField] = useState<
     { grid: Grid; result: ExposureField; overlayMs: number } | null
   >(null);
@@ -365,6 +372,17 @@ export default function App() {
     // `date` is intentionally absent: civilDay captures the only part that matters.
   }, [fieldEnabled, fieldKey, civilDay, zone.offsetHours, houseList]);
 
+  // Three point evaluations, not three exposure fields.
+  const seasonalPoint = useMemo(() => {
+    if (!probe) return null;
+    const occluders = houseList.map(occluderFor);
+    return seasonalPointExposure(
+      probe,
+      occluders,
+      civilParts(date, zone.timeZone).year,
+    );
+  }, [probe, houseList, date, zone.timeZone]);
+
   const handleCameraMode = (mode: CameraMode) => {
     setCameraMode(mode);
     const store = useSolarHouseStore.getState();
@@ -404,9 +422,25 @@ export default function App() {
         cameraMode={cameraMode}
         zone={zone}
         solar={solar}
-        onDate={(year, month, day) =>
-          clock.setDate(withCivilDate(date, zone.timeZone, year, month, day))
-        }
+        season={season}
+        onSeason={(next) => {
+          const store = useSolarHouseStore.getState();
+          store.setSeason(next);
+          const latitude = sunOrigin.latitude;
+          clock.setDate(
+            seasonalDate(
+              next,
+              latitude,
+              civilParts(date, zone.timeZone).year,
+              zone.offsetHours,
+            ),
+          );
+        }}
+        onDate={(year, month, day) => {
+          // An explicit date is no longer one of the presets.
+          useSolarHouseStore.getState().setSeason(null);
+          clock.setDate(withCivilDate(date, zone.timeZone, year, month, day));
+        }}
         onTime={(minutes) =>
           clock.setDate(withCivilMinutes(date, zone.timeZone, minutes))
         }
@@ -421,6 +455,7 @@ export default function App() {
       />
       <ExposurePanel
         exposure={exposure}
+        seasonal={seasonalPoint}
         zone={zone}
         armed={probeArmed}
         fieldEnabled={fieldEnabled}
@@ -436,6 +471,13 @@ export default function App() {
             maxMinutes: field.result.maxMinutes,
             computeMs: field.result.computeMs,
             overlayMs: field.overlayMs,
+            areaAbove8hSquareMeters: areaAboveHours(
+              field.result,
+              field.grid.spacingMeters ** 2,
+              8,
+            ),
+            coveredAreaSquareMeters:
+              field.result.pointCount * field.grid.spacingMeters ** 2,
           }
         }
         onArm={() => useSolarHouseStore.getState().armProbe(true)}
