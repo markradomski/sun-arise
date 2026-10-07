@@ -6,6 +6,7 @@ import {
 } from "cesium";
 import type { Grid } from "../scene/grid";
 import { colourForMinutes } from "../solar/exposureRamp";
+import { featherAlpha } from "../scene/featherMask";
 import type { ExposureField } from "../solar/exposureField";
 
 /**
@@ -22,9 +23,14 @@ import type { ExposureField } from "../solar/exposureField";
  */
 const OVERLAY_ALPHA = 0.62;
 
+/** Output pixels per analytical sample, so the feather has room to ramp. */
+const FEATHER_RESOLUTION = 8;
+
 export class HeatmapOverlay {
   private layer: ImageryLayer | null = null;
   private canvas = document.createElement("canvas");
+  /** Exposure colours at one pixel per sample, before the feather is applied. */
+  private dataCanvas = document.createElement("canvas");
   /** Starts hidden: the layer is attached before the map is ever shown. */
   private visible = false;
   /** Milliseconds spent in the most recent update. */
@@ -76,13 +82,14 @@ export class HeatmapOverlay {
   }
 
   private paint(grid: Grid, field: ExposureField) {
-    this.canvas.width = grid.cols;
-    this.canvas.height = grid.rows;
+    const source = this.dataCanvas;
+    source.width = grid.cols;
+    source.height = grid.rows;
 
-    const context = this.canvas.getContext("2d");
-    if (!context) return;
+    const sourceContext = source.getContext("2d");
+    if (!sourceContext) return;
 
-    const image = context.createImageData(grid.cols, grid.rows);
+    const image = sourceContext.createImageData(grid.cols, grid.rows);
     for (let row = 0; row < grid.rows; row += 1) {
       for (let col = 0; col < grid.cols; col += 1) {
         const sample = row * grid.cols + col;
@@ -95,7 +102,35 @@ export class HeatmapOverlay {
         image.data[pixel + 3] = 255;
       }
     }
-    context.putImageData(image, 0, 0);
+    sourceContext.putImageData(image, 0, 0);
+
+    // The feather needs more resolution than one pixel per sample, or its ramp
+    // would be three texels wide and band visibly. The colours are enlarged
+    // with the same bilinear smoothing the GPU would have applied, and the
+    // mask is written over the enlarged image; the exposure data itself is
+    // still only ever read at the sample positions above.
+    const width = grid.cols * FEATHER_RESOLUTION;
+    const height = grid.rows * FEATHER_RESOLUTION;
+    this.canvas.width = width;
+    this.canvas.height = height;
+
+    const context = this.canvas.getContext("2d");
+    if (!context) return;
+
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.clearRect(0, 0, width, height);
+    context.drawImage(source, 0, 0, width, height);
+
+    const masked = context.getImageData(0, 0, width, height);
+    for (let y = 0; y < height; y += 1) {
+      const v = (y + 0.5) / height;
+      for (let x = 0; x < width; x += 1) {
+        const u = (x + 0.5) / width;
+        masked.data[(y * width + x) * 4 + 3] = Math.round(255 * featherAlpha(u, v));
+      }
+    }
+    context.putImageData(masked, 0, 0);
   }
 
   private removeLayer() {
