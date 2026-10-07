@@ -1,0 +1,13 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+# Cesium resolves its workers and assets from an absolute /cesium path, so the
+# site has to be served from the domain root rather than a sub-path.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

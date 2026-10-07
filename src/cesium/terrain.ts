@@ -16,8 +16,25 @@ export interface TerrainSetup {
   providerName: string;
 }
 
+/** The configured ion token, or undefined when none is set. */
+export function ionToken(): string | undefined {
+  return (import.meta.env.VITE_CESIUM_ION_TOKEN as string | undefined)?.trim() || undefined;
+}
+
+/**
+ * Must run before the Viewer is constructed. The Viewer creates its base
+ * imagery layer immediately, and anything built before the token is assigned
+ * falls back to Cesium's shared default token, which is rate limited and puts
+ * a "default access token" notice over the scene.
+ */
+export function configureIon(): boolean {
+  const token = ionToken();
+  if (token) Ion.defaultAccessToken = token;
+  return token !== undefined;
+}
+
 export async function createTerrain(): Promise<TerrainSetup> {
-  const token = (import.meta.env.VITE_CESIUM_ION_TOKEN as string | undefined)?.trim();
+  const token = ionToken();
 
   if (!token) {
     return {

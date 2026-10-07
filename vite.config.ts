@@ -1,6 +1,5 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { viteStaticCopy } from "vite-plugin-static-copy";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -45,18 +44,10 @@ const cesiumDevPlugin = {
 };
 
 export default defineConfig({
-  plugins: [
-    react(),
-    cesiumDevPlugin,
-    viteStaticCopy({
-      targets: [
-        {
-          src: path.resolve(__dirname, "node_modules/cesium/Build/Cesium"),
-          dest: "cesium",
-        },
-      ],
-    }),
-  ],
+  // `public/cesium` already holds the Cesium build and is copied to the output
+  // by Vite's own publicDir handling, which is what CESIUM_BASE_URL points at.
+  // Copying node_modules in as well produced a second, unreferenced 25 MB copy.
+  plugins: [react(), cesiumDevPlugin],
   define: {
     CESIUM_BASE_URL: JSON.stringify("/cesium"),
   },

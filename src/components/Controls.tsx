@@ -53,7 +53,7 @@ export default function Controls(props: Props) {
       <div className="brand">
         <div className="brand-mark">☀</div>
         <div>
-          <div className="eyebrow">SOLAR HOUSE</div>
+          <div className="eyebrow">SUN ARISE</div>
           <h1>{props.siteName}</h1>
         </div>
       </div>

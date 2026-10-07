@@ -8,7 +8,7 @@ import {
   type TerrainProvider,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
-import { createTerrain, type TerrainSetup } from "./terrain";
+import { configureIon, createTerrain, type TerrainSetup } from "./terrain";
 import { DEFAULT_SITE } from "../scene/site";
 
 /**
@@ -23,6 +23,8 @@ export class CesiumScene {
   private terrainProvider?: TerrainProvider;
 
   constructor(container: HTMLElement) {
+    configureIon();
+
     this.viewer = new Viewer(container, {
       animation: false,
       timeline: false,
