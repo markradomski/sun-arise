@@ -1,7 +1,7 @@
 import type { PointExposure } from "../solar/exposure";
 import type { CivilZone } from "../solar/timezone";
 import { civilParts } from "../solar/timezone";
-import { LEGEND_BANDS } from "../solar/exposureRamp";
+import { LEGEND_GRADIENT_CSS, LEGEND_TICKS } from "../solar/exposureRamp";
 import { SEASON_LABELS } from "../solar/seasons";
 import type { SeasonalPoint } from "../solar/seasonalComparison";
 import Section from "./Section";
@@ -46,7 +46,7 @@ export default function ExposurePanel(props: Props) {
 
   return (
     <>
-      <Section title="Sunlight" badge={props.fieldEnabled ? "on" : undefined}>
+      <Section title="Sunlight">
         <div className="button-row">
           <button
             className={props.fieldEnabled ? "active" : ""}
@@ -59,19 +59,32 @@ export default function ExposurePanel(props: Props) {
           </button>
         </div>
 
-        {props.fieldEnabled && (
-          <>
-            <div className="legend">
-              {LEGEND_BANDS.map((band) => (
-                <span key={band.label}>
-                  <i style={{ background: band.css }} />
-                  {band.label}
-                </span>
-              ))}
-            </div>
-            <div className="legend-caption muted">hours of direct sun</div>
-            {props.fieldPending && <p className="note">Calculating…</p>}
-          </>
+        <div className="legend">
+          <div className="legend-bar" style={{ background: LEGEND_GRADIENT_CSS }} />
+          <div className="legend-ticks">
+            {LEGEND_TICKS.map((tick) => (
+              <span key={tick.label} style={{ left: `${tick.position * 100}%` }}>
+                {tick.label}
+              </span>
+            ))}
+          </div>
+          <div className="legend-caption muted">
+            <span>less</span>
+            <span>hours of direct sun</span>
+            <span>more</span>
+          </div>
+        </div>
+
+        {props.fieldEnabled && props.fieldPending && (
+          <p className="note">Calculating…</p>
+        )}
+
+        {!e && (
+          <p className="note">
+            {props.armed
+              ? "Click anywhere on the ground."
+              : "Inspect a spot to see how much sun it gets."}
+          </p>
         )}
 
         {e && (

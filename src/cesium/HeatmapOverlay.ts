@@ -25,10 +25,25 @@ const OVERLAY_ALPHA = 0.62;
 export class HeatmapOverlay {
   private layer: ImageryLayer | null = null;
   private canvas = document.createElement("canvas");
+  /** Starts hidden: the layer is attached before the map is ever shown. */
+  private visible = false;
   /** Milliseconds spent in the most recent update. */
   lastUpdateMs = 0;
 
   constructor(private viewer: Viewer) {}
+
+  /**
+   * Shows or hides the drawn layer by its alpha, never by `show`.
+   *
+   * Cesium routes `ImageryLayer.show` through the same path as adding a layer:
+   * every loaded tile the layer covers is pushed back to LOADING and has its
+   * imagery skeletons rebuilt. Alpha is applied when the tile is drawn, so it
+   * changes nothing about the globe's tiles and costs a blend.
+   */
+  setVisible(visible: boolean) {
+    this.visible = visible;
+    if (this.layer) this.layer.alpha = visible ? OVERLAY_ALPHA : 0;
+  }
 
   async update(grid: Grid | null, field: ExposureField | null) {
     const started = performance.now();
@@ -49,7 +64,10 @@ export class HeatmapOverlay {
       { rectangle },
     );
 
-    const next = new ImageryLayer(provider, { alpha: OVERLAY_ALPHA });
+    // Added before the old layer is removed so the ground is never uncovered.
+    const next = new ImageryLayer(provider, {
+      alpha: this.visible ? OVERLAY_ALPHA : 0,
+    });
     this.viewer.imageryLayers.add(next);
     this.removeLayer();
     this.layer = next;

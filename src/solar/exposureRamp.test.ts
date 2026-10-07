@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { colourForHours, colourForMinutes, LEGEND_BANDS } from "./exposureRamp";
+import {
+  colourForHours,
+  colourForMinutes,
+  LEGEND_GRADIENT_CSS,
+  LEGEND_TICKS,
+} from "./exposureRamp";
 
 /** Perceived lightness, good enough to assert monotonicity. */
 function luminance([r, g, b]: [number, number, number]): number {
@@ -26,13 +31,19 @@ describe("exposureRamp", () => {
     expect(colourForHours(99)).toEqual(colourForHours(14));
   });
 
-  it("stays within a single hue family", () => {
-    // Red >= green >= blue at every step keeps the ramp on one amber hue
-    // rather than drifting into a rainbow.
-    for (const hours of [0, 2, 4, 6, 8, 10, 12, 14]) {
-      const [r, g, b] = colourForHours(hours);
-      expect(r).toBeGreaterThanOrEqual(g);
-      expect(g).toBeGreaterThanOrEqual(b);
+  it("runs cool in shade and warm in full sun", () => {
+    const [shadeR, , shadeB] = colourForHours(0);
+    const [sunR, , sunB] = colourForHours(14);
+    expect(shadeB).toBeGreaterThan(shadeR);
+    expect(sunR).toBeGreaterThan(sunB);
+  });
+
+  it("never reaches a red that would read as heat", () => {
+    // The warm end must stay amber/yellow, so green never collapses against
+    // red anywhere along the ramp.
+    for (let hours = 0; hours <= 14; hours += 0.25) {
+      const [r, g] = colourForHours(hours);
+      expect(g).toBeGreaterThan(r * 0.5);
     }
   });
 
@@ -52,8 +63,8 @@ describe("exposureRamp", () => {
     expect(luminance(mid)).toBeLessThan(luminance(high));
   });
 
-  it("publishes one legend band per reference range", () => {
-    expect(LEGEND_BANDS.map((b) => b.label)).toEqual([
+  it("publishes one legend tick per reference hour", () => {
+    expect(LEGEND_TICKS.map((t) => t.label)).toEqual([
       "2",
       "4",
       "6",
@@ -62,7 +73,23 @@ describe("exposureRamp", () => {
       "12",
       "14+",
     ]);
-    expect(new Set(LEGEND_BANDS.map((b) => b.css)).size).toBe(LEGEND_BANDS.length);
+  });
+
+  it("places legend ticks at their true position on the scale", () => {
+    for (const tick of LEGEND_TICKS) {
+      const hours = Number.parseFloat(tick.label);
+      expect(tick.position).toBeCloseTo(hours / 14, 6);
+    }
+  });
+
+  it("builds the legend gradient from the ramp's own stops", () => {
+    // The legend must not be able to drift from the colours the map draws.
+    for (const hours of [0, 14]) {
+      const [r, g, b] = colourForHours(hours);
+      expect(LEGEND_GRADIENT_CSS).toContain(`rgb(${r}, ${g}, ${b})`);
+    }
+    expect(LEGEND_GRADIENT_CSS).toContain("0.0%");
+    expect(LEGEND_GRADIENT_CSS).toContain("100.0%");
   });
 
   it("produces channel values a canvas can use", () => {

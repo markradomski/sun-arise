@@ -24,6 +24,7 @@ import {
   type ExposureField,
 } from "./solar/exposureField";
 import { DEFAULT_GRID, groundGrid, type Grid } from "./scene/grid";
+import { fieldSignature } from "./scene/fieldSignature";
 import { eastNorthOffset } from "./scene/geo";
 import { HeatmapOverlay } from "./cesium/HeatmapOverlay";
 import { occluderFor } from "./scene/occluders";
@@ -52,6 +53,8 @@ export default function App() {
   const cameraRef = useRef<CameraController | null>(null);
   const settleRef = useRef<((id: string) => Promise<void>) | null>(null);
   const fieldOverlayRef = useRef<HeatmapOverlay | null>(null);
+  /** Whether the heatmap's imagery layer has been attached to the globe yet. */
+  const overlayAttachedRef = useRef(false);
 
   const [date, setDate] = useState(INITIAL_DATE);
   const [playing, setPlaying] = useState(false);
@@ -66,12 +69,15 @@ export default function App() {
   const fieldEnabled = useSolarHouseStore((s) => s.fieldEnabled);
   const season = useSolarHouseStore((s) => s.season);
   const baseline = useSolarHouseStore((s) => s.baseline);
+  const terrainResults = useSolarHouseStore((s) => s.terrain);
   const [fieldPending, setFieldPending] = useState(false);
   const [field, setField] = useState<{
     grid: Grid;
     result: ExposureField;
     baseline: ExposureField | null;
     overlayMs: number;
+    /** Inputs this field was computed from, so it can be reused or retired. */
+    signature: string;
   } | null>(null);
   const addHouse = useSolarHouseStore((s) => s.addHouse);
   const updateObject = useSolarHouseStore((s) => s.updateObject);
@@ -324,27 +330,52 @@ export default function App() {
 
   // Keyed on the inputs that actually change the field. Camera movement and
   // clock ticks within the same civil day deliberately do not recompute it.
-  const fieldKey = houseList
-    .map(
-      (h) =>
-        `${h.id}:${h.position.latitude.toFixed(7)},${h.position.longitude.toFixed(7)},${h.position.height.toFixed(2)},${h.rotation.heading.toFixed(2)},${h.scale}`,
-    )
-    .join("|");
+  const signature = fieldSignature({
+    houses: houseList,
+    baseline,
+    civilDay,
+    utcOffsetHours: zone.offsetHours,
+  });
+
+  useEffect(() => {
+    fieldOverlayRef.current?.setVisible(fieldEnabled);
+  }, [fieldEnabled]);
 
   useEffect(() => {
     const scene = sceneRef.current;
     const overlay = fieldOverlayRef.current;
     if (!scene || !overlay) return;
 
-    if (!fieldEnabled || houseList.length === 0) {
+    if (houseList.length === 0) {
       overlay.clear();
       setField(null);
       setFieldPending(false);
+      overlayAttachedRef.current = false;
       return;
     }
 
+    if (field?.signature === signature) return;
+
+    // Hiding the map keeps the computed field, so showing it again is free.
+    // A field computed from inputs that have since changed is retired instead,
+    // rather than left on screen describing a placement that no longer exists.
+    if (!fieldEnabled) {
+      setField((current) => (current?.signature === signature ? current : null));
+      setFieldPending(false);
+      // Attaching an imagery layer makes Cesium rebuild the tiles it covers.
+      // Doing that once during initial load, while the globe is still
+      // streaming anyway, leaves the first Show a change of alpha only.
+      //
+      // It waits for footprint analysis, because that is what settles each
+      // house onto the terrain. Prewarming first would compute a field for a
+      // height the house is about to leave, and the first Show would have to
+      // rebuild the layer after all.
+      const placementSettled = houseList.every((h) => terrainResults[h.id]);
+      if (overlayAttachedRef.current || !placementSettled) return;
+    }
+
     let cancelled = false;
-    setFieldPending(true);
+    if (fieldEnabled) setFieldPending(true);
     // Anchored to the baseline placement while one exists, so both fields
     // describe the same piece of ground and the comparison is like for like.
     const centre = baseline?.[0]?.position ?? houseList[0].position;
@@ -376,11 +407,13 @@ export default function App() {
 
       await overlay.update(grid, result);
       if (cancelled) return;
+      overlayAttachedRef.current = true;
       setField({
         grid,
         result,
         baseline: baselineResult,
         overlayMs: overlay.lastUpdateMs,
+        signature,
       });
       setFieldPending(false);
     })().catch(console.error);
@@ -389,7 +422,16 @@ export default function App() {
       cancelled = true;
     };
     // `date` is intentionally absent: civilDay captures the only part that matters.
-  }, [fieldEnabled, fieldKey, civilDay, zone.offsetHours, houseList, baseline]);
+  }, [
+    fieldEnabled,
+    signature,
+    field?.signature,
+    houseList,
+    baseline,
+    date,
+    zone.offsetHours,
+    terrainResults,
+  ]);
 
   // Exact point analysis for both placements, not the nearest grid cell.
   const baselinePointMinutes = useMemo(() => {
