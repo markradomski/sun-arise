@@ -5,9 +5,16 @@ import {
   type Viewer,
 } from "cesium";
 import type { Grid } from "../scene/grid";
-import { colourForMinutes } from "../solar/exposureRamp";
 import { featherAlpha } from "../scene/featherMask";
-import type { ExposureField } from "../solar/exposureField";
+
+/**
+ * One colour per grid sample. The overlay draws whatever it is handed and
+ * knows nothing about hours, strength or which ramp produced the colour.
+ */
+export interface OverlaySource {
+  pointCount: number;
+  colourAt(index: number): [number, number, number];
+}
 
 /**
  * Exposure heatmap drawn as a draped imagery layer.
@@ -26,8 +33,18 @@ const OVERLAY_ALPHA = 0.62;
 /** Output pixels per analytical sample, so the feather has room to ramp. */
 const FEATHER_RESOLUTION = 8;
 
+/**
+ * Frames to wait for a prepared layer before swapping regardless. Only a
+ * backstop: if the globe never settles, because the camera is moving or a tile
+ * request is slow, the overlay must still advance rather than freeze.
+ */
+const MAX_SWAP_FRAMES = 30;
+
 export class HeatmapOverlay {
+  /** The layer currently on screen. */
   private layer: ImageryLayer | null = null;
+  /** Attached and loading at alpha 0, not yet shown. */
+  private pending: ImageryLayer | null = null;
   private canvas = document.createElement("canvas");
   /** Exposure colours at one pixel per sample, before the feather is applied. */
   private dataCanvas = document.createElement("canvas");
@@ -35,6 +52,13 @@ export class HeatmapOverlay {
   private visible = false;
   /** Milliseconds spent in the most recent update. */
   lastUpdateMs = 0;
+  /**
+   * Updates are asynchronous and NOW mode issues them while the clock runs, so
+   * a later one must be able to overtake an earlier one. Anything that finishes
+   * after a newer update has started is dropped rather than swapped in, which
+   * keeps the collection at one overlay layer and the newest image on screen.
+   */
+  private updateToken = 0;
 
   constructor(private viewer: Viewer) {}
 
@@ -51,16 +75,17 @@ export class HeatmapOverlay {
     if (this.layer) this.layer.alpha = visible ? OVERLAY_ALPHA : 0;
   }
 
-  async update(grid: Grid | null, field: ExposureField | null) {
+  async update(grid: Grid | null, source: OverlaySource | null) {
     const started = performance.now();
+    const token = (this.updateToken += 1);
 
-    if (!grid || !field || field.pointCount === 0) {
+    if (!grid || !source || source.pointCount === 0) {
       this.clear();
       this.lastUpdateMs = performance.now() - started;
       return;
     }
 
-    this.paint(grid, field);
+    this.paint(grid, source);
 
     const rectangle = Rectangle.fromDegrees(
       ...boundsDegrees(grid),
@@ -70,23 +95,64 @@ export class HeatmapOverlay {
       { rectangle },
     );
 
-    // Added before the old layer is removed so the ground is never uncovered.
-    const next = new ImageryLayer(provider, {
-      alpha: this.visible ? OVERLAY_ALPHA : 0,
-    });
+    if (token !== this.updateToken) return;
+
+    // Double buffered. Removing a layer frees its imagery from every tile it
+    // covers immediately, while the replacement's imagery is still loading
+    // into them, so swapping in one step leaves frames with bare terrain. The
+    // new layer is therefore attached transparent, left to load while the
+    // current one keeps drawing, and only then promoted.
+    const next = new ImageryLayer(provider, { alpha: 0 });
     this.viewer.imageryLayers.add(next);
-    this.removeLayer();
+    this.discardPending();
+    this.pending = next;
+
+    await this.whenDrawable();
+    // A newer update has already discarded this layer and owns the swap.
+    if (token !== this.updateToken) return;
+
+    const previous = this.layer;
+    next.alpha = this.visible ? OVERLAY_ALPHA : 0;
     this.layer = next;
+    this.pending = null;
+    if (previous) this.viewer.imageryLayers.remove(previous, true);
 
     this.lastUpdateMs = performance.now() - started;
   }
 
-  private paint(grid: Grid, field: ExposureField) {
-    const source = this.dataCanvas;
-    source.width = grid.cols;
-    source.height = grid.rows;
+  /**
+   * Resolves once the globe has had a chance to draw the newly attached layer.
+   * `tilesLoaded` covers the imagery actually reaching the tiles; the frame
+   * count makes sure at least one render has happened since the layer was
+   * added, and bounds the wait if the globe never settles.
+   */
+  private whenDrawable(): Promise<void> {
+    const scene = this.viewer.scene;
+    return new Promise((resolve) => {
+      let frames = 0;
+      const stop = scene.postRender.addEventListener(() => {
+        frames += 1;
+        if ((frames >= 2 && scene.globe.tilesLoaded) || frames >= MAX_SWAP_FRAMES) {
+          stop();
+          resolve();
+        }
+      });
+    });
+  }
 
-    const sourceContext = source.getContext("2d");
+  /** Drops a prepared layer that a newer update has superseded. */
+  private discardPending() {
+    if (!this.pending) return;
+    this.viewer.imageryLayers.remove(this.pending, true);
+    this.pending = null;
+  }
+
+  private paint(grid: Grid, source: OverlaySource) {
+    const samples = this.dataCanvas;
+    samples.width = grid.cols;
+    samples.height = grid.rows;
+
+    const sourceContext = samples.getContext("2d");
     if (!sourceContext) return;
 
     const image = sourceContext.createImageData(grid.cols, grid.rows);
@@ -95,7 +161,7 @@ export class HeatmapOverlay {
         const sample = row * grid.cols + col;
         // Grid rows run south to north; image rows run north to south.
         const pixel = ((grid.rows - 1 - row) * grid.cols + col) * 4;
-        const [r, g, b] = colourForMinutes(field.minutes[sample]);
+        const [r, g, b] = source.colourAt(sample);
         image.data[pixel] = r;
         image.data[pixel + 1] = g;
         image.data[pixel + 2] = b;
@@ -120,7 +186,7 @@ export class HeatmapOverlay {
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
     context.clearRect(0, 0, width, height);
-    context.drawImage(source, 0, 0, width, height);
+    context.drawImage(samples, 0, 0, width, height);
 
     const masked = context.getImageData(0, 0, width, height);
     for (let y = 0; y < height; y += 1) {
@@ -134,6 +200,7 @@ export class HeatmapOverlay {
   }
 
   private removeLayer() {
+    this.discardPending();
     if (!this.layer) return;
     this.viewer.imageryLayers.remove(this.layer, true);
     this.layer = null;

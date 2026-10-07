@@ -25,6 +25,13 @@ import {
 } from "./solar/exposureField";
 import { DEFAULT_GRID, groundGrid, type Grid } from "./scene/grid";
 import { fieldSignature } from "./scene/fieldSignature";
+import {
+  instantField,
+  instantPoint,
+  type InstantField,
+} from "./solar/instantField";
+import { instantColour } from "./solar/instantRamp";
+import { colourForMinutes } from "./solar/exposureRamp";
 import { eastNorthOffset } from "./scene/geo";
 import { HeatmapOverlay } from "./cesium/HeatmapOverlay";
 import { occluderFor } from "./scene/occluders";
@@ -39,8 +46,12 @@ import Controls from "./components/Controls";
 import TerrainDiagnostics from "./components/TerrainDiagnostics";
 import ExposurePanel from "./components/ExposurePanel";
 
+// Now, not noon: NOW mode opens on the real moment at the site, and the clock
+// is a true instant so the browser's own timezone never enters into it.
+/** Milliseconds between NOW repaints while the clock is moving. */
+const INSTANT_INTERVAL_MS = 180;
+
 const INITIAL_DATE = new Date();
-INITIAL_DATE.setHours(12, 0, 0, 0);
 
 const INITIAL_SITE = DEFAULT_SITE;
 
@@ -55,6 +66,11 @@ export default function App() {
   const fieldOverlayRef = useRef<HeatmapOverlay | null>(null);
   /** Whether the heatmap's imagery layer has been attached to the globe yet. */
   const overlayAttachedRef = useRef(false);
+  const lastInstantRef = useRef(0);
+  /** Inputs the current instantaneous field was computed from. */
+  const instantKeyRef = useRef("");
+  /** What the overlay image currently shows. */
+  const paintedKeyRef = useRef("");
 
   const [date, setDate] = useState(INITIAL_DATE);
   const [playing, setPlaying] = useState(false);
@@ -67,10 +83,12 @@ export default function App() {
   const probeArmed = useSolarHouseStore((s) => s.probeArmed);
   const objects = useSolarHouseStore((s) => s.objects);
   const fieldEnabled = useSolarHouseStore((s) => s.fieldEnabled);
+  const fieldMode = useSolarHouseStore((s) => s.fieldMode);
   const season = useSolarHouseStore((s) => s.season);
   const baseline = useSolarHouseStore((s) => s.baseline);
   const terrainResults = useSolarHouseStore((s) => s.terrain);
   const [fieldPending, setFieldPending] = useState(false);
+  const [instant, setInstant] = useState<InstantField | null>(null);
   const [field, setField] = useState<{
     grid: Grid;
     result: ExposureField;
@@ -323,6 +341,18 @@ export default function App() {
     // result, and the clock ticks every frame while the simulation plays.
   }, [probe, objects, civilDay, zone.offsetHours]);
 
+  // Follows the clock rather than the civil day, so the inspected point reports
+  // the same instant the shadows are drawn at.
+  const instantProbe = useMemo(() => {
+    if (!probe) return null;
+    const occluders = Object.values(objects)
+      .filter((object) => object.type === "house")
+      .map(occluderFor);
+    return instantPoint(probe, occluders, probe, date, {
+      utcOffsetHours: zone.offsetHours,
+    });
+  }, [probe, objects, date, zone.offsetHours]);
+
   const houseList = useMemo(
     () => Object.values(objects).filter((object) => object.type === "house"),
     [objects],
@@ -405,9 +435,6 @@ export default function App() {
         : null;
       if (cancelled) return;
 
-      await overlay.update(grid, result);
-      if (cancelled) return;
-      overlayAttachedRef.current = true;
       setField({
         grid,
         result,
@@ -432,6 +459,85 @@ export default function App() {
     zone.offsetHours,
     terrainResults,
   ]);
+
+  // NOW evaluates the grid against one sun position, so it is cheap enough to
+  // follow the clock. It is still throttled: the cost is the repaint, not the
+  // occlusion tests, and the shadow animation reads fine at this cadence.
+  const instantKey = `${fieldMode}|${signature}|${date.getTime()}`;
+
+  useEffect(() => {
+    if (fieldMode !== "NOW" || !field) {
+      setInstant(null);
+      instantKeyRef.current = "";
+      return;
+    }
+
+    // Nothing to redraw while the map is hidden, beyond the one computation
+    // that attaches the layer. Recomputing behind a hidden overlay would also
+    // repaint it, which is what Show/Hide must never do.
+    if (!fieldEnabled && overlayAttachedRef.current) return;
+    if (instantKeyRef.current === instantKey) return;
+
+    const compute = () => {
+      lastInstantRef.current = performance.now();
+      instantKeyRef.current = instantKey;
+      setInstant(
+        instantField(
+          field.grid.points.map((p) => p.position),
+          houseList.map(occluderFor),
+          field.grid.centre,
+          date,
+          { utcOffsetHours: zone.offsetHours },
+        ),
+      );
+    };
+
+    // An absolute deadline, so a stream of clock ticks throttles to a steady
+    // cadence instead of debouncing into never running.
+    const due = lastInstantRef.current + INSTANT_INTERVAL_MS - performance.now();
+    if (due <= 0) {
+      compute();
+      return;
+    }
+    const timer = window.setTimeout(compute, due);
+    return () => window.clearTimeout(timer);
+  }, [fieldMode, fieldEnabled, field, houseList, date, zone.offsetHours, instantKey]);
+
+  // One owner of the overlay image, so the two modes cannot race each other.
+  useEffect(() => {
+    const overlay = fieldOverlayRef.current;
+    if (!overlay || !field) return;
+    if (!fieldEnabled && overlayAttachedRef.current) return;
+
+    // Redrawing identical pixels would replace the imagery layer for nothing,
+    // and replacing it is the one thing that makes Cesium rebuild tiles. Show
+    // and Hide in particular must get back the image already on the globe.
+    const paintKey =
+      fieldMode === "NOW"
+        ? `NOW|${field.signature}|${instantKeyRef.current}`
+        : `WHOLE_DAY|${field.signature}`;
+    if (paintedKeyRef.current === paintKey) return;
+
+    const source =
+      fieldMode === "NOW"
+        ? instant && {
+            pointCount: instant.pointCount,
+            colourAt: (i: number) => instantColour(instant.strength[i]),
+          }
+        : {
+            pointCount: field.result.pointCount,
+            colourAt: (i: number) => colourForMinutes(field.result.minutes[i]),
+          };
+    if (!source) return;
+
+    paintedKeyRef.current = paintKey;
+    overlay
+      .update(field.grid, source)
+      .then(() => {
+        overlayAttachedRef.current = true;
+      })
+      .catch(console.error);
+  }, [field, instant, fieldMode, fieldEnabled]);
 
   // Exact point analysis for both placements, not the nearest grid cell.
   const baselinePointMinutes = useMemo(() => {
@@ -562,6 +668,11 @@ export default function App() {
           armed={probeArmed}
           fieldEnabled={fieldEnabled}
           fieldPending={fieldPending}
+          mode={fieldMode}
+          instant={instantProbe}
+          sunAltitudeDeg={solar.altitudeDeg}
+          date={date}
+          onMode={(mode) => useSolarHouseStore.getState().setFieldMode(mode)}
           onSetBaseline={() => {
             const store = useSolarHouseStore.getState();
             const houses = Object.values(store.objects).filter(

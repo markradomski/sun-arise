@@ -9,6 +9,7 @@ import {
 } from "../scene/types";
 import type { FootprintTerrain } from "../scene/terrainAnalysis";
 import type { Season } from "../solar/seasons";
+import type { FieldMode } from "../solar/fieldMode";
 import type { BoxOccluder } from "../solar/exposure";
 import { catalogEntry, DEFAULT_HOUSE_SLUG } from "../houses/catalog";
 
@@ -28,6 +29,8 @@ export interface SolarHouseState {
   /** The next ground click places the probe rather than a house. */
   probeArmed: boolean;
   fieldEnabled: boolean;
+  /** What the sunlight overlay represents, independent of its visibility. */
+  fieldMode: FieldMode;
   /** Active seasonal preset, or null when analysing an arbitrary date. */
   season: Season | null;
   /**
@@ -48,6 +51,7 @@ export interface SolarHouseState {
   setProbe(probe: GeoPosition | null): void;
   armProbe(armed: boolean): void;
   setFieldEnabled(enabled: boolean): void;
+  setFieldMode(mode: FieldMode): void;
   setSeason(season: Season | null): void;
   setBaseline(baseline: BoxOccluder[] | null): void;
 }
@@ -65,6 +69,7 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   probe: null,
   probeArmed: false,
   fieldEnabled: false,
+  fieldMode: "NOW",
   season: null,
   baseline: null,
 
@@ -165,6 +170,10 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
 
   setFieldEnabled(enabled) {
     set({ fieldEnabled: enabled });
+  },
+
+  setFieldMode(mode) {
+    set({ fieldMode: mode });
   },
 
   setSeason(season) {

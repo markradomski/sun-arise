@@ -2,6 +2,13 @@ import type { PointExposure } from "../solar/exposure";
 import type { CivilZone } from "../solar/timezone";
 import { civilParts } from "../solar/timezone";
 import { LEGEND_GRADIENT_CSS, LEGEND_TICKS } from "../solar/exposureRamp";
+import { INSTANT_GRADIENT_CSS, SHADE_CSS } from "../solar/instantRamp";
+import {
+  FIELD_MODES,
+  FIELD_MODE_LABELS,
+  type FieldMode,
+} from "../solar/fieldMode";
+import type { InstantPoint } from "../solar/instantField";
 import { SEASON_LABELS } from "../solar/seasons";
 import type { SeasonalPoint } from "../solar/seasonalComparison";
 import Section from "./Section";
@@ -25,6 +32,12 @@ interface Props {
   armed: boolean;
   fieldEnabled: boolean;
   fieldPending: boolean;
+  mode: FieldMode;
+  /** Instantaneous reading for the inspected point, in NOW mode. */
+  instant: InstantPoint | null;
+  sunAltitudeDeg: number;
+  date: Date;
+  onMode: (mode: FieldMode) => void;
   comparison: PlacementComparison | null;
   hasBaseline: boolean;
   /** Metres the house has moved from the ground the comparison is anchored to. */
@@ -47,6 +60,18 @@ export default function ExposurePanel(props: Props) {
   return (
     <>
       <Section title="Sunlight">
+        <div className="segmented" role="group" aria-label="What the map shows">
+          {FIELD_MODES.map((mode) => (
+            <button
+              key={mode}
+              className={props.mode === mode ? "active" : ""}
+              onClick={() => props.onMode(mode)}
+            >
+              {FIELD_MODE_LABELS[mode]}
+            </button>
+          ))}
+        </div>
+
         <div className="button-row">
           <button
             className={props.fieldEnabled ? "active" : ""}
@@ -59,21 +84,38 @@ export default function ExposurePanel(props: Props) {
           </button>
         </div>
 
-        <div className="legend">
-          <div className="legend-bar" style={{ background: LEGEND_GRADIENT_CSS }} />
-          <div className="legend-ticks">
-            {LEGEND_TICKS.map((tick) => (
-              <span key={tick.label} style={{ left: `${tick.position * 100}%` }}>
-                {tick.label}
-              </span>
-            ))}
+        {props.mode === "WHOLE_DAY" ? (
+          <div className="legend">
+            <div className="legend-bar" style={{ background: LEGEND_GRADIENT_CSS }} />
+            <div className="legend-ticks">
+              {LEGEND_TICKS.map((tick) => (
+                <span key={tick.label} style={{ left: `${tick.position * 100}%` }}>
+                  {tick.label}
+                </span>
+              ))}
+            </div>
+            <div className="legend-caption muted">
+              <span>less</span>
+              <span>hours of direct sun</span>
+              <span>more</span>
+            </div>
           </div>
-          <div className="legend-caption muted">
-            <span>less</span>
-            <span>hours of direct sun</span>
-            <span>more</span>
+        ) : (
+          <div className="legend">
+            <div className="legend-bar" style={{ background: INSTANT_GRADIENT_CSS }} />
+            <div className="legend-caption muted">
+              <span>low sunlight</span>
+              <span>strong sunlight</span>
+            </div>
+            <div className="legend-swatch muted">
+              <i style={{ background: SHADE_CSS }} />
+              in shade
+            </div>
+            <p className="note">
+              Direct sunlight at {formatTime(props.date, props.zone.timeZone)}
+            </p>
           </div>
-        </div>
+        )}
 
         {props.fieldEnabled && props.fieldPending && (
           <p className="note">Calculating…</p>
@@ -87,7 +129,35 @@ export default function ExposurePanel(props: Props) {
           </p>
         )}
 
-        {e && (
+        {e && props.mode === "NOW" && props.instant && (
+          <div className="readout">
+            <div className="readout-headline">
+              <strong>
+                {props.instant.night
+                  ? "After dark"
+                  : props.instant.state === "SUN"
+                    ? "Direct sun"
+                    : "In shade"}
+              </strong>
+              <span className="muted">
+                at {formatTime(props.date, props.zone.timeZone)}
+              </span>
+            </div>
+            <div className="interval-row">
+              <span className="interval-label">Sun</span>
+              <span className="interval-values">
+                {props.instant.night
+                  ? "below the horizon"
+                  : `${props.sunAltitudeDeg.toFixed(0)}° above horizon`}
+              </span>
+            </div>
+            <button className="link" onClick={props.onClear}>
+              Clear spot
+            </button>
+          </div>
+        )}
+
+        {e && props.mode === "WHOLE_DAY" && (
           <div className="readout">
             <div className="readout-headline">
               <strong>{formatDuration(e.directSunMinutes)}</strong>
