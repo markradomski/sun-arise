@@ -5,7 +5,18 @@ import {
   useSolarHouseStore,
 } from "../state/store";
 
-export default function TerrainDiagnostics() {
+export interface FieldDiagnostics {
+  cols: number;
+  rows: number;
+  pointCount: number;
+  spacingMeters: number;
+  extentMeters: number;
+  sunSamples: number;
+  computeMs: number;
+  overlayMs: number;
+}
+
+export default function TerrainDiagnostics(props: { field: FieldDiagnostics | null }) {
   const [open, setOpen] = useState(false);
   const status = useSolarHouseStore((s) => s.terrainStatus);
   const providerName = useSolarHouseStore((s) => s.terrainProviderName);
@@ -19,10 +30,10 @@ export default function TerrainDiagnostics() {
       <button
         className="terrain-toggle"
         onClick={() => setOpen(true)}
-        title="Terrain diagnostics"
+        title="Diagnostics"
       >
         <span className={`terrain-dot ${status.toLowerCase()}`} />
-        Terrain
+        Diagnostics
       </button>
     );
   }
@@ -39,6 +50,33 @@ export default function TerrainDiagnostics() {
         <span>Provider</span>
         <span>{providerName || "—"}</span>
       </div>
+
+      {props.field && (
+        <>
+          <div className="terrain-row">
+            <span>Grid</span>
+            <span>
+              {props.field.cols}×{props.field.rows} · {props.field.pointCount} pts
+            </span>
+          </div>
+          <div className="terrain-row">
+            <span>Coverage</span>
+            <span>
+              {props.field.extentMeters} m @ {props.field.spacingMeters} m
+            </span>
+          </div>
+          <div className="terrain-row">
+            <span>Sun samples</span>
+            <span>{props.field.sunSamples}</span>
+          </div>
+          <div className="terrain-row">
+            <span>Compute</span>
+            <span>
+              {props.field.computeMs.toFixed(0)} / {props.field.overlayMs.toFixed(0)} ms
+            </span>
+          </div>
+        </>
+      )}
 
       {!selected && <p className="terrain-note">No object selected.</p>}
 

@@ -24,6 +24,7 @@ import {
   type ExposureField,
 } from "./solar/exposureField";
 import { DEFAULT_GRID, groundGrid, type Grid } from "./scene/grid";
+import { eastNorthOffset } from "./scene/geo";
 import { HeatmapOverlay } from "./cesium/HeatmapOverlay";
 import { occluderFor } from "./scene/occluders";
 import { terrainPolicyFor, type GeoPosition } from "./scene/types";
@@ -65,6 +66,7 @@ export default function App() {
   const fieldEnabled = useSolarHouseStore((s) => s.fieldEnabled);
   const season = useSolarHouseStore((s) => s.season);
   const baseline = useSolarHouseStore((s) => s.baseline);
+  const [fieldPending, setFieldPending] = useState(false);
   const [field, setField] = useState<{
     grid: Grid;
     result: ExposureField;
@@ -337,10 +339,12 @@ export default function App() {
     if (!fieldEnabled || houseList.length === 0) {
       overlay.clear();
       setField(null);
+      setFieldPending(false);
       return;
     }
 
     let cancelled = false;
+    setFieldPending(true);
     // Anchored to the baseline placement while one exists, so both fields
     // describe the same piece of ground and the comparison is like for like.
     const centre = baseline?.[0]?.position ?? houseList[0].position;
@@ -378,6 +382,7 @@ export default function App() {
         baseline: baselineResult,
         overlayMs: overlay.lastUpdateMs,
       });
+      setFieldPending(false);
     })().catch(console.error);
 
     return () => {
@@ -428,6 +433,12 @@ export default function App() {
     );
   }, [probe, houseList, date, zone.timeZone]);
 
+  const baselineDriftMeters = useMemo(() => {
+    if (!baseline?.[0] || houseList.length === 0) return null;
+    const offset = eastNorthOffset(baseline[0].position, houseList[0].position);
+    return Math.hypot(offset.east, offset.north);
+  }, [baseline, houseList]);
+
   const handleCameraMode = (mode: CameraMode) => {
     setCameraMode(mode);
     const store = useSolarHouseStore.getState();
@@ -460,6 +471,7 @@ export default function App() {
       <div ref={containerRef} className="globe" />
       <div className="vignette" />
       <Controls
+        siteName="The Domain · Sydney"
         date={date}
         playing={playing}
         speed={speed}
@@ -497,21 +509,36 @@ export default function App() {
         onHeading={handleHeading}
         onPlace={handlePlace}
         onCameraMode={handleCameraMode}
-      />
-      <ExposurePanel
-        exposure={exposure}
-        seasonal={seasonalPoint}
-        comparison={comparison}
-        hasBaseline={baseline !== null}
-        onSetBaseline={() => {
-          const store = useSolarHouseStore.getState();
-          const houses = Object.values(store.objects).filter((o) => o.type === "house");
-          store.setBaseline(houses.length > 0 ? houses.map(occluderFor) : null);
-        }}
-        onClearBaseline={() => useSolarHouseStore.getState().setBaseline(null)}
-        zone={zone}
-        armed={probeArmed}
-        fieldEnabled={fieldEnabled}
+      >
+        <ExposurePanel
+          exposure={exposure}
+          seasonal={seasonalPoint}
+          comparison={comparison}
+          hasBaseline={baseline !== null}
+          baselineDriftMeters={baselineDriftMeters}
+          zone={zone}
+          armed={probeArmed}
+          fieldEnabled={fieldEnabled}
+          fieldPending={fieldPending}
+          onSetBaseline={() => {
+            const store = useSolarHouseStore.getState();
+            const houses = Object.values(store.objects).filter(
+              (o) => o.type === "house",
+            );
+            store.setBaseline(houses.length > 0 ? houses.map(occluderFor) : null);
+          }}
+          onClearBaseline={() => useSolarHouseStore.getState().setBaseline(null)}
+          onArm={() => useSolarHouseStore.getState().armProbe(true)}
+          onToggleField={() =>
+            useSolarHouseStore.getState().setFieldEnabled(!fieldEnabled)
+          }
+          onClear={() => {
+            useSolarHouseStore.getState().setProbe(null);
+            useSolarHouseStore.getState().armProbe(false);
+          }}
+        />
+      </Controls>
+      <TerrainDiagnostics
         field={
           field && {
             cols: field.grid.cols,
@@ -520,32 +547,12 @@ export default function App() {
             spacingMeters: field.grid.spacingMeters,
             extentMeters: field.grid.extentMeters,
             sunSamples: field.result.timeline.samples.length,
-            minMinutes: field.result.minMinutes,
-            maxMinutes: field.result.maxMinutes,
             computeMs: field.result.computeMs,
             overlayMs: field.overlayMs,
-            areaAbove8hSquareMeters: areaAboveHours(
-              field.result,
-              field.grid.spacingMeters ** 2,
-              8,
-            ),
-            coveredAreaSquareMeters:
-              field.result.pointCount * field.grid.spacingMeters ** 2,
           }
         }
-        onArm={() => useSolarHouseStore.getState().armProbe(true)}
-        onToggleField={() =>
-          useSolarHouseStore.getState().setFieldEnabled(!fieldEnabled)
-        }
-        onClear={() => {
-          useSolarHouseStore.getState().setProbe(null);
-          useSolarHouseStore.getState().armProbe(false);
-          useSolarHouseStore.getState().setFieldEnabled(false);
-        }}
       />
-      <TerrainDiagnostics />
       <div className="north">N</div>
-      <div className="location-pill">The Domain · Sydney</div>
     </main>
   );
 }

@@ -4,22 +4,7 @@ import { civilParts } from "../solar/timezone";
 import { LEGEND_BANDS } from "../solar/exposureRamp";
 import { SEASON_LABELS } from "../solar/seasons";
 import type { SeasonalPoint } from "../solar/seasonalComparison";
-
-export interface FieldSummary {
-  cols: number;
-  rows: number;
-  pointCount: number;
-  spacingMeters: number;
-  extentMeters: number;
-  sunSamples: number;
-  minMinutes: number;
-  maxMinutes: number;
-  computeMs: number;
-  overlayMs: number;
-  /** Ground area in square metres receiving at least eight hours of sun. */
-  areaAbove8hSquareMeters: number;
-  coveredAreaSquareMeters: number;
-}
+import Section from "./Section";
 
 export interface ComparisonPair {
   baseline: number;
@@ -34,238 +19,195 @@ export interface PlacementComparison {
 }
 
 interface Props {
-  comparison: PlacementComparison | null;
-  hasBaseline: boolean;
-  onSetBaseline: () => void;
-  onClearBaseline: () => void;
   exposure: PointExposure | null;
   seasonal: SeasonalPoint[] | null;
   zone: CivilZone;
   armed: boolean;
-  field: FieldSummary | null;
   fieldEnabled: boolean;
+  fieldPending: boolean;
+  comparison: PlacementComparison | null;
+  hasBaseline: boolean;
+  /** Metres the house has moved from the ground the comparison is anchored to. */
+  baselineDriftMeters: number | null;
   onArm: () => void;
   onClear: () => void;
   onToggleField: () => void;
+  onSetBaseline: () => void;
+  onClearBaseline: () => void;
 }
 
-export default function ExposurePanel(props: Props) {
-  if (!props.exposure && !props.field) {
-    return (
-      <div className="probe-actions">
-        <button
-          className={`probe-toggle ${props.armed ? "armed" : ""}`}
-          onClick={props.onArm}
-        >
-          <span className="probe-dot" />
-          {props.armed ? "Click the ground" : "Inspect point"}
-        </button>
-        <button
-          className={`probe-toggle ${props.fieldEnabled ? "armed" : ""}`}
-          onClick={props.onToggleField}
-        >
-          Ground field
-        </button>
-      </div>
-    );
-  }
+/** Beyond this the house is leaving the compared ground, so say so. */
+const DRIFT_WARNING_METERS = 24;
 
+export default function ExposurePanel(props: Props) {
   const e = props.exposure;
   const sun = e?.intervals.filter((i) => i.state === "SUN") ?? [];
-  const blocked = e?.intervals.filter((i) => i.state === "BLOCKED") ?? [];
+  const shade = e?.intervals.filter((i) => i.state === "BLOCKED") ?? [];
 
   return (
-    <div className="probe-panel">
-      <div className="probe-head">
-        <span className="probe-dot" />
-        <strong>DIRECT SUN</strong>
-        <button onClick={props.onClear}>×</button>
-      </div>
+    <>
+      <Section title="Sunlight" badge={props.fieldEnabled ? "on" : undefined}>
+        <div className="button-row">
+          <button
+            className={props.fieldEnabled ? "active" : ""}
+            onClick={props.onToggleField}
+          >
+            {props.fieldEnabled ? "Hide sunlight map" : "Show sunlight map"}
+          </button>
+          <button className={props.armed ? "active" : ""} onClick={props.onArm}>
+            {props.armed ? "Click a spot…" : "Inspect a spot"}
+          </button>
+        </div>
 
-      {props.field && (
-        <>
-          <div className="probe-row">
-            <span>Grid</span>
-            <span>
-              {props.field.cols}×{props.field.rows} · {props.field.pointCount} pts
-            </span>
-          </div>
-          <div className="probe-row">
-            <span>Coverage</span>
-            <span>
-              {props.field.extentMeters} m @ {props.field.spacingMeters} m
-            </span>
-          </div>
-          <div className="probe-row">
-            <span>Sun samples</span>
-            <span>{props.field.sunSamples}</span>
-          </div>
-          <div className="probe-row">
-            <span>Field range</span>
-            <span>
-              {formatDuration(props.field.minMinutes)} – {formatDuration(props.field.maxMinutes)}
-            </span>
-          </div>
-          <div className="probe-row">
-            <span>8+ h area</span>
-            <span>
-              {Math.round(props.field.areaAbove8hSquareMeters)} m² (
-              {(
-                (props.field.areaAbove8hSquareMeters /
-                  props.field.coveredAreaSquareMeters) *
-                100
-              ).toFixed(0)}
-              %)
-            </span>
-          </div>
-          <div className="probe-row">
-            <span>Compute</span>
-            <span>
-              {props.field.computeMs.toFixed(0)} ms field ·{" "}
-              {props.field.overlayMs.toFixed(0)} ms draw
-            </span>
-          </div>
+        {props.fieldEnabled && (
+          <>
+            <div className="legend">
+              {LEGEND_BANDS.map((band) => (
+                <span key={band.label}>
+                  <i style={{ background: band.css }} />
+                  {band.label}
+                </span>
+              ))}
+            </div>
+            <div className="legend-caption muted">hours of direct sun</div>
+            {props.fieldPending && <p className="note">Calculating…</p>}
+          </>
+        )}
 
-          <div className="probe-legend">
-            {LEGEND_BANDS.map((band) => (
-              <span key={band.label}>
-                <i style={{ background: band.css }} />
-                {band.label}
+        {e && (
+          <div className="readout">
+            <div className="readout-headline">
+              <strong>{formatDuration(e.directSunMinutes)}</strong>
+              <span className="muted">
+                of {formatDuration(e.daylightMinutes)} daylight
               </span>
-            ))}
-          </div>
-          <div className="probe-divider" />
-        </>
-      )}
-
-      {e && (
-        <>
-          <div className="probe-row">
-            <span>Date</span>
-            <span>{formatDate(e.date, props.zone.timeZone)}</span>
-          </div>
-          <div className="probe-row">
-            <span>Daylight</span>
-            <span>{formatDuration(e.daylightMinutes)}</span>
-          </div>
-          <div className="probe-row">
-            <span>Probe sun</span>
-            <span>{formatDuration(e.directSunMinutes)}</span>
-          </div>
-          <div className="probe-row">
-            <span>Share</span>
-            <span>{(e.directSunFraction * 100).toFixed(0)}%</span>
-          </div>
-
-          <div className="probe-interval-group">
-            <span className="probe-interval-label">Sun</span>
-            <div className="probe-intervals">
-              {sun.length === 0 && <span className="probe-note">none</span>}
-              {sun.map((interval) => (
-                <span key={interval.start.toISOString()}>
-                  {formatTime(interval.start, props.zone.timeZone)}–
-                  {formatTime(interval.end, props.zone.timeZone)}
-                </span>
-              ))}
             </div>
-          </div>
 
-          <div className="probe-interval-group">
-            <span className="probe-interval-label">Shade</span>
-            <div className="probe-intervals">
-              {blocked.length === 0 && <span className="probe-note">none</span>}
-              {blocked.map((interval) => (
-                <span key={interval.start.toISOString()}>
-                  {formatTime(interval.start, props.zone.timeZone)}–
-                  {formatTime(interval.end, props.zone.timeZone)}
-                </span>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
+            <IntervalRow
+              label="Sun"
+              intervals={sun}
+              timeZone={props.zone.timeZone}
+            />
+            <IntervalRow
+              label="Shade"
+              intervals={shade}
+              timeZone={props.zone.timeZone}
+            />
 
-      {props.fieldEnabled && (
-        <>
-          <div className="probe-divider" />
-          <div className="probe-row probe-subhead">
-            <span>SUNLIGHT COMPARISON</span>
-            <button className="probe-link" onClick={props.onSetBaseline}>
-              {props.hasBaseline ? "Reset" : "Set baseline"}
+            {props.seasonal && (
+              <div className="seasonal">
+                {props.seasonal.map((entry) => (
+                  <div key={entry.season}>
+                    <span>{SEASON_LABELS[entry.season]}</span>
+                    <strong>{formatDuration(entry.directSunMinutes)}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button className="link" onClick={props.onClear}>
+              Clear spot
             </button>
           </div>
+        )}
+      </Section>
 
-          {!props.comparison && (
-            <p className="probe-note">
-              Capture a baseline, then move or rotate the house.
-            </p>
-          )}
+      <Section
+        title="Compare placement"
+        badge={props.hasBaseline ? "saved" : undefined}
+      >
+        <div className="button-row">
+          <button
+            className={props.hasBaseline ? "active" : ""}
+            onClick={props.onSetBaseline}
+          >
+            {props.hasBaseline ? "Save new baseline" : "Save this placement"}
+          </button>
+          {props.hasBaseline && <button onClick={props.onClearBaseline}>Clear</button>}
+        </div>
 
-          {props.comparison && (
-            <>
-              <div className="probe-compare probe-compare-head">
-                <span />
-                <span>Baseline</span>
-                <span>Current</span>
-                <span>Change</span>
-              </div>
-              <ComparisonRow
-                label="8+ h area"
-                pair={props.comparison.area8h}
-                format={formatArea}
-                delta={formatAreaDelta}
-              />
-              <ComparisonRow
-                label="6+ h area"
-                pair={props.comparison.area6h}
-                format={formatArea}
-                delta={formatAreaDelta}
-              />
-              <ComparisonRow
-                label="Avg exposure"
-                pair={props.comparison.averageMinutes}
-                format={formatShortDuration}
-                delta={formatMinutesDelta}
-              />
-              {props.comparison.point && (
-                <ComparisonRow
-                  label="Inspect point"
-                  pair={props.comparison.point}
-                  format={formatShortDuration}
-                  delta={formatMinutesDelta}
-                />
-              )}
-              <button className="probe-link probe-clear" onClick={props.onClearBaseline}>
-                Clear baseline
-              </button>
-            </>
-          )}
-        </>
-      )}
+        {!props.hasBaseline && (
+          <p className="note">
+            Save the current placement, then move the house to see what changes.
+          </p>
+        )}
 
-      {props.seasonal && (
-        <>
-          <div className="probe-divider" />
-          <div className="probe-row probe-subhead">
-            <span>THIS LOCATION</span>
-          </div>
-          {props.seasonal.map((entry) => (
-            <div className="probe-row" key={entry.season}>
-              <span>{SEASON_LABELS[entry.season]}</span>
-              <span>{formatDuration(entry.directSunMinutes)}</span>
+        {props.hasBaseline && !props.comparison && (
+          <p className="note">Turn on the sunlight map to compare.</p>
+        )}
+
+        {props.comparison && (
+          <>
+            <div className="compare compare-head">
+              <span />
+              <span>Saved</span>
+              <span>Now</span>
+              <span>Change</span>
             </div>
-          ))}
-        </>
-      )}
+            <CompareRow
+              label="8h+ sun"
+              pair={props.comparison.area8h}
+              format={formatArea}
+              delta={areaDelta}
+            />
+            <CompareRow
+              label="6h+ sun"
+              pair={props.comparison.area6h}
+              format={formatArea}
+              delta={areaDelta}
+            />
+            <CompareRow
+              label="Average"
+              pair={props.comparison.averageMinutes}
+              format={shortDuration}
+              delta={minutesDelta}
+            />
+            {props.comparison.point && (
+              <CompareRow
+                label="This spot"
+                pair={props.comparison.point}
+                format={shortDuration}
+                delta={minutesDelta}
+              />
+            )}
 
-      <p className="probe-note">
-        {props.fieldEnabled ? "Field on · " : ""}house only
-      </p>
+            {props.baselineDriftMeters !== null &&
+              props.baselineDriftMeters > DRIFT_WARNING_METERS && (
+                <p className="note warn">
+                  House has moved {Math.round(props.baselineDriftMeters)} m from the
+                  compared area. Save a new baseline to recentre it.
+                </p>
+              )}
+          </>
+        )}
+      </Section>
+    </>
+  );
+}
+
+function IntervalRow(props: {
+  label: string;
+  intervals: { start: Date; end: Date }[];
+  timeZone: string;
+}) {
+  return (
+    <div className="interval-row">
+      <span className="interval-label">{props.label}</span>
+      <span className="interval-values">
+        {props.intervals.length === 0
+          ? "none"
+          : props.intervals
+              .map(
+                (i) =>
+                  `${formatTime(i.start, props.timeZone)}–${formatTime(i.end, props.timeZone)}`,
+              )
+              .join("   ")}
+      </span>
     </div>
   );
 }
 
-function ComparisonRow(props: {
+function CompareRow(props: {
   label: string;
   pair: ComparisonPair;
   format: (value: number) => string;
@@ -274,11 +216,11 @@ function ComparisonRow(props: {
   const { text, direction } = props.delta(props.pair);
   const tone = direction > 0 ? "up" : direction < 0 ? "down" : "flat";
   return (
-    <div className="probe-compare">
+    <div className="compare">
       <span>{props.label}</span>
       <span>{props.format(props.pair.baseline)}</span>
       <span>{props.format(props.pair.current)}</span>
-      <span className={`probe-delta ${tone}`}>{text}</span>
+      <span className={`delta ${tone}`}>{text}</span>
     </div>
   );
 }
@@ -287,7 +229,7 @@ function formatArea(squareMeters: number): string {
   return `${Math.round(squareMeters)} m²`;
 }
 
-function formatAreaDelta(pair: ComparisonPair) {
+function areaDelta(pair: ComparisonPair) {
   const change = pair.current - pair.baseline;
   if (pair.baseline === 0) {
     return { text: change === 0 ? "—" : "new", direction: Math.sign(change) };
@@ -300,17 +242,16 @@ function formatAreaDelta(pair: ComparisonPair) {
   };
 }
 
-function formatMinutesDelta(pair: ComparisonPair) {
+function minutesDelta(pair: ComparisonPair) {
   const change = Math.round(pair.current - pair.baseline);
   if (change === 0) return { text: "—", direction: 0 };
   return {
-    text: `${change > 0 ? "+" : "−"}${formatShortDuration(Math.abs(change))}`,
+    text: `${change > 0 ? "+" : "−"}${shortDuration(Math.abs(change))}`,
     direction: Math.sign(change),
   };
 }
 
-/** Compact form for table cells: 9h06, 45m. */
-function formatShortDuration(minutes: number): string {
+function shortDuration(minutes: number): string {
   const rounded = Math.round(minutes);
   const h = Math.floor(rounded / 60);
   const m = rounded % 60;
@@ -326,9 +267,4 @@ function formatDuration(minutes: number): string {
 function formatTime(date: Date, timeZone: string): string {
   const { hour, minute } = civilParts(date, timeZone);
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-}
-
-function formatDate(date: Date, timeZone: string): string {
-  const { year, month, day } = civilParts(date, timeZone);
-  return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
 }
