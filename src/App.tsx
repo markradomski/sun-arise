@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Cartesian3, Math as CesiumMath } from "cesium";
 import {
   CameraController,
   DEFAULT_CAMERA_MODE,
@@ -31,6 +32,17 @@ import {
   type InstantField,
 } from "./solar/instantField";
 import { instantColour } from "./solar/instantRamp";
+import { FrustumLayer } from "./cesium/FrustumLayer";
+import { Geocoder } from "./cesium/geocode";
+import LocationSearch, { type ResolvedLocation } from "./components/LocationSearch";
+import SurfCamPanel from "./components/SurfCamPanel";
+import {
+  cameraElevationMeters,
+  cesiumPitchDeg,
+  createCamera,
+  type InstallationCamera,
+} from "./optics/camera";
+import { classifyQuery } from "./scene/location";
 import { colourForMinutes } from "./solar/exposureRamp";
 import { eastNorthOffset } from "./scene/geo";
 import { HeatmapOverlay } from "./cesium/HeatmapOverlay";
@@ -55,6 +67,17 @@ const INITIAL_DATE = new Date();
 
 const INITIAL_SITE = DEFAULT_SITE;
 
+function geocodeMessage(status: string, query: string): string {
+  switch (status) {
+    case "NO_MATCH":
+      return `No match for "${query}". Try a coordinate pair, or a less specific address.`;
+    case "UNCONFIGURED":
+      return "Address search needs a Cesium ion token. Coordinates still work.";
+    default:
+      return "Address search failed. Check the connection, or enter coordinates.";
+  }
+}
+
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<CesiumScene | null>(null);
@@ -67,6 +90,10 @@ export default function App() {
   /** Whether the heatmap's imagery layer has been attached to the globe yet. */
   const overlayAttachedRef = useRef(false);
   const lastInstantRef = useRef(0);
+  const frustumRef = useRef<FrustumLayer | null>(null);
+  const geocoderRef = useRef<Geocoder | null>(null);
+  /** Identifies the newest location lookup so a slow one cannot overwrite it. */
+  const locationTokenRef = useRef(0);
   /** Inputs the current instantaneous field was computed from. */
   const instantKeyRef = useRef("");
   /** What the overlay image currently shows. */
@@ -87,6 +114,14 @@ export default function App() {
   const season = useSolarHouseStore((s) => s.season);
   const baseline = useSolarHouseStore((s) => s.baseline);
   const terrainResults = useSolarHouseStore((s) => s.terrain);
+  const appMode = useSolarHouseStore((s) => s.appMode);
+  const surfCam = useSolarHouseStore((s) => s.surfCam);
+  const surfCamArmed = useSolarHouseStore((s) => s.surfCamArmed);
+  const lookingThrough = useSolarHouseStore((s) => s.lookingThrough);
+  const terrainStatus = useSolarHouseStore((s) => s.terrainStatus);
+  const [located, setLocated] = useState<ResolvedLocation | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [fieldPending, setFieldPending] = useState(false);
   const [instant, setInstant] = useState<InstantField | null>(null);
   const [field, setField] = useState<{
@@ -223,6 +258,10 @@ export default function App() {
     const fieldOverlay = new HeatmapOverlay(scene.viewer);
     fieldOverlayRef.current = fieldOverlay;
 
+    const frustum = new FrustumLayer(scene.viewer);
+    frustumRef.current = frustum;
+    geocoderRef.current = new Geocoder(scene.scene);
+
     const probeMarker = new ProbeMarker(scene.viewer);
     const stopProbe = scene.viewer.scene.postUpdate.addEventListener(() => {
       probeMarker.update(useSolarHouseStore.getState().probe);
@@ -236,6 +275,17 @@ export default function App() {
       getTerrainStatus: () => useSolarHouseStore.getState().terrainStatus,
       onGroundClick: (location) => {
         const store = useSolarHouseStore.getState();
+
+        if (store.surfCamArmed) {
+          store.setSurfCam(
+            createCamera("surf-cam-1", location, store.surfCam ?? undefined),
+          );
+          store.armSurfCam(false);
+          return;
+        }
+
+        // Surf Cam borrows the scene but must not place or move houses.
+        if (store.appMode === "SURF_CAM") return;
 
         if (store.probeArmed) {
           store.setProbe(location);
@@ -292,6 +342,9 @@ export default function App() {
       probeMarker.destroy();
       fieldOverlay.destroy();
       fieldOverlayRef.current = null;
+      frustum.destroy();
+      frustumRef.current = null;
+      geocoderRef.current = null;
       stopInitialFraming();
       drag.destroy();
       sampler.dispose();
@@ -539,6 +592,19 @@ export default function App() {
       .catch(console.error);
   }, [field, instant, fieldMode, fieldEnabled]);
 
+  useEffect(() => {
+    frustumRef.current?.update(appMode === "SURF_CAM" ? surfCam : null);
+  }, [appMode, surfCam]);
+
+  // Leaving the look-through state by any route — the button, a mode switch,
+  // unmount — must hand terrain collision back to the navigation camera.
+  useEffect(() => {
+    if (lookingThrough) return;
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
+  }, [lookingThrough]);
+
   // Exact point analysis for both placements, not the nearest grid cell.
   const baselinePointMinutes = useMemo(() => {
     if (!probe || !baseline) return null;
@@ -587,6 +653,142 @@ export default function App() {
     return Math.hypot(offset.east, offset.north);
   }, [baseline, houseList]);
 
+  /**
+   * Resolves what the user typed, then samples terrain for it.
+   *
+   * Both halves are async and the user can type again while either is in
+   * flight, so every lookup carries a token and a result whose token is no
+   * longer current is discarded rather than displayed.
+   */
+  const handleLocationSearch = async (query: string) => {
+    const parsed = classifyQuery(query);
+    if (!parsed) return;
+
+    const token = (locationTokenRef.current += 1);
+    setLocating(true);
+    setLocationError(null);
+
+    let position: { latitude: number; longitude: number };
+    let label: string;
+    let approximate: boolean;
+
+    if (parsed.kind === "COORDINATES") {
+      position = parsed.value;
+      label = "Entered coordinates";
+      approximate = false;
+    } else {
+      const geocoder = geocoderRef.current;
+      const outcome = geocoder
+        ? await geocoder.search(parsed.value)
+        : ({ status: "UNCONFIGURED" } as const);
+      if (token !== locationTokenRef.current) return;
+
+      if (outcome.status !== "OK") {
+        setLocating(false);
+        setLocated(null);
+        setLocationError(geocodeMessage(outcome.status, parsed.value));
+        return;
+      }
+
+      const best = outcome.matches[0];
+      position = best.position;
+      label = best.displayName;
+      approximate = best.approximate;
+    }
+
+    if (token !== locationTokenRef.current) return;
+    setLocated({
+      position,
+      label,
+      approximate,
+      elevationMeters: null,
+      elevationStatus: "PENDING",
+    });
+    setLocating(false);
+
+    const scene = sceneRef.current;
+    const provider = scene?.getTerrainProvider();
+    if (!provider || useSolarHouseStore.getState().terrainStatus !== "READY") {
+      if (token === locationTokenRef.current) {
+        setLocated((current) =>
+          current ? { ...current, elevationStatus: "UNAVAILABLE" } : current,
+        );
+      }
+      return;
+    }
+
+    try {
+      const [elevation] = await sampleElevations(provider, [position]);
+      if (token !== locationTokenRef.current) return;
+      setLocated((current) =>
+        current
+          ? {
+              ...current,
+              elevationMeters: elevation ?? null,
+              elevationStatus: elevation === undefined ? "UNAVAILABLE" : "READY",
+            }
+          : current,
+      );
+    } catch {
+      if (token !== locationTokenRef.current) return;
+      setLocated((current) =>
+        current ? { ...current, elevationStatus: "UNAVAILABLE" } : current,
+      );
+    }
+  };
+
+  /** Flies the navigation camera. Deliberately changes no scene state. */
+  const handleGoToLocation = () => {
+    if (!located) return;
+    cameraRef.current?.flyTo("SITE", {
+      ...located.position,
+      height: located.elevationMeters ?? 0,
+    });
+  };
+
+  /** The explicit, separate act of adopting the location as the analysed site. */
+  const handleSetSite = () => {
+    if (!located) return;
+    useSolarHouseStore.getState().setSite(located.position);
+    handleGoToLocation();
+  };
+
+  const handleLookThrough = () => {
+    const camera = useSolarHouseStore.getState().surfCam;
+    const scene = sceneRef.current;
+    if (!camera || !scene) return;
+
+    // Cesium keeps the navigation camera clear of the terrain, and that
+    // correction lifted the eye 1-2 m above a 6 m mount — enough to change
+    // what clears a fence. Collision detection is suspended while looking
+    // through so the view sits exactly where the camera would.
+    scene.viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
+
+    scene.viewer.camera.setView({
+      destination: Cartesian3.fromDegrees(
+        camera.ground.longitude,
+        camera.ground.latitude,
+        cameraElevationMeters(camera),
+      ),
+      orientation: {
+        heading: CesiumMath.toRadians(camera.bearingDeg),
+        pitch: CesiumMath.toRadians(cesiumPitchDeg(camera.tiltDeg)),
+        roll: 0,
+      },
+    });
+    useSolarHouseStore.getState().setLookingThrough(true);
+  };
+
+  const handleReturnView = () => {
+    useSolarHouseStore.getState().setLookingThrough(false);
+    const scene = sceneRef.current;
+    if (scene) {
+      scene.viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
+    }
+    const camera = useSolarHouseStore.getState().surfCam;
+    cameraRef.current?.flyTo("SITE", camera ? camera.ground : INITIAL_SITE);
+  };
+
   const handleCameraMode = (mode: CameraMode) => {
     setCameraMode(mode);
     const store = useSolarHouseStore.getState();
@@ -619,7 +821,25 @@ export default function App() {
       <div ref={containerRef} className="globe" />
       <div className="vignette" />
       <Controls
-        siteName="The Domain · Sydney"
+        siteName={appMode === "SURF_CAM" ? "Camera siting" : "The Domain · Sydney"}
+        appMode={appMode}
+        onAppMode={(mode) => useSolarHouseStore.getState().setAppMode(mode)}
+        location={
+          <LocationSearch
+            resolved={located}
+            busy={locating}
+            error={locationError}
+            hasActiveSite={site !== null}
+            onSearch={(query) => void handleLocationSearch(query)}
+            onGoTo={handleGoToLocation}
+            onSetSite={handleSetSite}
+            onClear={() => {
+              locationTokenRef.current += 1;
+              setLocated(null);
+              setLocationError(null);
+            }}
+          />
+        }
         date={date}
         playing={playing}
         speed={speed}
@@ -658,6 +878,7 @@ export default function App() {
         onPlace={handlePlace}
         onCameraMode={handleCameraMode}
       >
+        {appMode === "SOLAR" ? (
         <ExposurePanel
           exposure={exposure}
           seasonal={seasonalPoint}
@@ -690,6 +911,30 @@ export default function App() {
             useSolarHouseStore.getState().armProbe(false);
           }}
         />
+        ) : (
+          <SurfCamPanel
+            camera={surfCam}
+            armed={surfCamArmed}
+            lookingThrough={lookingThrough}
+            terrainReady={terrainStatus === "READY"}
+            onArm={() => useSolarHouseStore.getState().armSurfCam(true)}
+            onChange={(patch) => useSolarHouseStore.getState().updateSurfCam(patch)}
+            onReset={() => {
+              const store = useSolarHouseStore.getState();
+              if (store.surfCam) {
+                store.setSurfCam(createCamera(store.surfCam.id, store.surfCam.ground));
+              }
+            }}
+            onClear={() => {
+              const store = useSolarHouseStore.getState();
+              store.setSurfCam(null);
+              store.armSurfCam(false);
+              store.setLookingThrough(false);
+            }}
+            onLookThrough={handleLookThrough}
+            onReturnView={handleReturnView}
+          />
+        )}
       </Controls>
       <TerrainDiagnostics
         field={

@@ -11,6 +11,8 @@ import type { FootprintTerrain } from "../scene/terrainAnalysis";
 import type { Season } from "../solar/seasons";
 import type { FieldMode } from "../solar/fieldMode";
 import type { BoxOccluder } from "../solar/exposure";
+import type { InstallationCamera } from "../optics/camera";
+import { constrainCamera } from "../optics/camera";
 import { catalogEntry, DEFAULT_HOUSE_SLUG } from "../houses/catalog";
 
 export interface SolarHouseState {
@@ -39,6 +41,15 @@ export interface SolarHouseState {
    */
   baseline: BoxOccluder[] | null;
 
+  /** Which workflow the UI is in. Solar analysis is unaffected by Surf Cam. */
+  appMode: AppMode;
+  /** The virtual installation camera being designed, if one is placed. */
+  surfCam: InstallationCamera | null;
+  /** The next ground click places the surf camera's mount. */
+  surfCamArmed: boolean;
+  /** Set while the navigation camera is borrowed to look through the mount. */
+  lookingThrough: boolean;
+
   addObject(object: Omit<SceneObject, "id">): string;
   addHouse(position: GeoPosition, slug?: string): string;
   updateObject(id: string, patch: Partial<Omit<SceneObject, "id">>): void;
@@ -54,7 +65,15 @@ export interface SolarHouseState {
   setFieldMode(mode: FieldMode): void;
   setSeason(season: Season | null): void;
   setBaseline(baseline: BoxOccluder[] | null): void;
+  setAppMode(mode: AppMode): void;
+  setSurfCam(camera: InstallationCamera | null): void;
+  updateSurfCam(patch: Partial<Omit<InstallationCamera, "id">>): void;
+  armSurfCam(armed: boolean): void;
+  setLookingThrough(looking: boolean): void;
 }
+
+/** Solar analysis and Surf Cam are separate workflows over one scene. */
+export type AppMode = "SOLAR" | "SURF_CAM";
 
 export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   objects: {},
@@ -72,6 +91,10 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   fieldMode: "NOW",
   season: null,
   baseline: null,
+  appMode: "SOLAR",
+  surfCam: null,
+  surfCamArmed: false,
+  lookingThrough: false,
 
   addObject(object) {
     const id = nextObjectId(object.type);
@@ -178,6 +201,35 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
 
   setSeason(season) {
     set({ season });
+  },
+
+  setAppMode(mode) {
+    // Leaving Surf Cam must not leave the navigation camera borrowed.
+    set((state) => ({
+      appMode: mode,
+      surfCamArmed: mode === "SURF_CAM" ? state.surfCamArmed : false,
+      lookingThrough: mode === "SURF_CAM" ? state.lookingThrough : false,
+    }));
+  },
+
+  setSurfCam(camera) {
+    set({ surfCam: camera ? constrainCamera(camera) : null });
+  },
+
+  updateSurfCam(patch) {
+    set((state) =>
+      state.surfCam
+        ? { surfCam: constrainCamera({ ...state.surfCam, ...patch }) }
+        : {},
+    );
+  },
+
+  armSurfCam(armed) {
+    set({ surfCamArmed: armed });
+  },
+
+  setLookingThrough(looking) {
+    set({ lookingThrough: looking });
   },
 
   setBaseline(baseline) {

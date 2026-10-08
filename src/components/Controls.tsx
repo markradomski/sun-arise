@@ -6,6 +6,7 @@ import { formatClockMinutes } from "../solar/solarPosition";
 import { civilParts } from "../solar/timezone";
 import { SEASONS, SEASON_LABELS, type Season } from "../solar/seasons";
 import Section from "./Section";
+import type { AppMode } from "../state/store";
 
 interface Props {
   date: Date;
@@ -25,8 +26,17 @@ interface Props {
   onHeading: (heading: number) => void;
   onPlace: () => void;
   onCameraMode: (mode: CameraMode) => void;
+  appMode: AppMode;
+  onAppMode: (mode: AppMode) => void;
+  /** Shared location navigation, rendered inside the Site section. */
+  location?: ReactNode;
   children?: ReactNode;
 }
+
+const APP_MODES: { mode: AppMode; label: string }[] = [
+  { mode: "SOLAR", label: "Solar analysis" },
+  { mode: "SURF_CAM", label: "Surf cam" },
+];
 
 const VIEWS: { mode: CameraMode; label: string }[] = [
   { mode: "ORBIT", label: "Orbit" },
@@ -58,7 +68,22 @@ export default function Controls(props: Props) {
         </div>
       </div>
 
+      <div className="segmented" role="group" aria-label="Workflow">
+        {APP_MODES.map(({ mode, label }) => (
+          <button
+            key={mode}
+            className={props.appMode === mode ? "active" : ""}
+            aria-pressed={props.appMode === mode}
+            onClick={() => props.onAppMode(mode)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <Section title="Site" defaultOpen={!isNarrowViewport()}>
+        {props.location}
+
         <div className="button-row">
           {VIEWS.map(({ mode, label }) => (
             <button
@@ -89,6 +114,7 @@ export default function Controls(props: Props) {
         </button>
       </Section>
 
+      {props.appMode === "SOLAR" && (
       <Section
         title="Sun &amp; season"
         badge={props.season ? SEASON_LABELS[props.season] : formatShortDate(parts)}
@@ -145,6 +171,7 @@ export default function Controls(props: Props) {
           <span className="muted">{props.zone.abbreviation || props.zone.timeZone}</span>
         </div>
       </Section>
+      )}
 
       {props.children}
 
