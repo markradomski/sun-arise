@@ -25,6 +25,7 @@ import {
   type ExposureField,
 } from "./solar/exposureField";
 import { DEFAULT_GRID, groundGrid, type Grid } from "./scene/grid";
+import { fieldBounds } from "./scene/fieldBounds";
 import { fieldSignature } from "./scene/fieldSignature";
 import {
   instantField,
@@ -32,6 +33,7 @@ import {
   type InstantField,
 } from "./solar/instantField";
 import { instantColour } from "./solar/instantRamp";
+import { instantMatchesField } from "./scene/overlayPairing";
 import { FrustumLayer } from "./cesium/FrustumLayer";
 import { Geocoder } from "./cesium/geocode";
 import LocationSearch, { type ResolvedLocation } from "./components/LocationSearch";
@@ -123,7 +125,12 @@ export default function App() {
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [fieldPending, setFieldPending] = useState(false);
-  const [instant, setInstant] = useState<InstantField | null>(null);
+  const [instant, setInstant] = useState<{
+    result: InstantField;
+    /** The field signature this was computed over; see overlayPairing. */
+    forSignature: string;
+    pointCount: number;
+  } | null>(null);
   const [field, setField] = useState<{
     grid: Grid;
     result: ExposureField;
@@ -406,6 +413,11 @@ export default function App() {
     });
   }, [probe, objects, date, zone.offsetHours]);
 
+  const baselinePositions = useMemo(
+    () => (baseline ?? []).map((occluder) => occluder.position),
+    [baseline],
+  );
+
   const houseList = useMemo(
     () => Object.values(objects).filter((object) => object.type === "house"),
     [objects],
@@ -459,27 +471,45 @@ export default function App() {
 
     let cancelled = false;
     if (fieldEnabled) setFieldPending(true);
-    // Anchored to the baseline placement while one exists, so both fields
-    // describe the same piece of ground and the comparison is like for like.
-    const centre = baseline?.[0]?.position ?? houseList[0].position;
+    // Coverage follows the houses rather than sitting on the first one, and
+    // takes in the saved baseline placement too, so both arrangements are
+    // measured over identical ground and the comparison stays like for like.
+    const bounds = fieldBounds(houseList, baselinePositions, {
+      spacingMeters: DEFAULT_GRID.spacingMeters,
+    });
+    if (!bounds) return;
 
     (async () => {
-      const grid = groundGrid({ centre, ...DEFAULT_GRID });
+      const grid = groundGrid({
+        centre: bounds.centre,
+        extentMeters: bounds.extentEastMeters,
+        extentNorthMeters: bounds.extentNorthMeters,
+        spacingMeters: DEFAULT_GRID.spacingMeters,
+      });
       const provider = scene.getTerrainProvider();
       const status = useSolarHouseStore.getState().terrainStatus;
+
+      // Ground height for samples terrain cannot resolve, and for the whole
+      // field when there is no real terrain: the first house's own elevation
+      // rather than a guess at sea level.
+      const fallbackHeight = houseList[0].position.height;
 
       if (provider && status === "READY") {
         const heights = await sampleElevations(provider, grid.points.map((p) => p.position));
         if (cancelled) return;
         grid.points.forEach((point, index) => {
-          point.position.height = heights[index] ?? centre.height;
+          point.position.height = heights[index] ?? fallbackHeight;
         });
       } else {
-        for (const point of grid.points) point.position.height = centre.height;
+        for (const point of grid.points) point.position.height = fallbackHeight;
       }
 
       const positions = grid.points.map((p) => p.position);
-      const timeline = sunTimeline(centre, date, { utcOffsetHours: zone.offsetHours });
+      // Sun position is taken at the field centre; across even a few hundred
+      // metres it varies by far less than the sampling interval resolves.
+      const timeline = sunTimeline(bounds.centre, date, {
+        utcOffsetHours: zone.offsetHours,
+      });
       const result = exposureField(positions, houseList.map(occluderFor), timeline);
       // Recomputed against the active timeline rather than stored, so a date or
       // season change moves both sides together.
@@ -516,7 +546,7 @@ export default function App() {
   // NOW evaluates the grid against one sun position, so it is cheap enough to
   // follow the clock. It is still throttled: the cost is the repaint, not the
   // occlusion tests, and the shadow animation reads fine at this cadence.
-  const instantKey = `${fieldMode}|${signature}|${date.getTime()}`;
+  const instantKey = `${fieldMode}|${field?.signature ?? "none"}|${date.getTime()}`;
 
   useEffect(() => {
     if (fieldMode !== "NOW" || !field) {
@@ -534,15 +564,17 @@ export default function App() {
     const compute = () => {
       lastInstantRef.current = performance.now();
       instantKeyRef.current = instantKey;
-      setInstant(
-        instantField(
+      setInstant({
+        result: instantField(
           field.grid.points.map((p) => p.position),
           houseList.map(occluderFor),
           field.grid.centre,
           date,
           { utcOffsetHours: zone.offsetHours },
         ),
-      );
+        forSignature: field.signature,
+        pointCount: field.grid.points.length,
+      });
     };
 
     // An absolute deadline, so a stream of clock ticks throttles to a steady
@@ -571,12 +603,21 @@ export default function App() {
         : `WHOLE_DAY|${field.signature}`;
     if (paintedKeyRef.current === paintKey) return;
 
+    const matched =
+      fieldMode !== "NOW" ||
+      instantMatchesField(instant, {
+        signature: field.signature,
+        pointCount: field.grid.points.length,
+      });
+
     const source =
       fieldMode === "NOW"
-        ? instant && {
-            pointCount: instant.pointCount,
-            colourAt: (i: number) => instantColour(instant.strength[i]),
-          }
+        ? matched && instant
+          ? {
+              pointCount: instant.result.pointCount,
+              colourAt: (i: number) => instantColour(instant.result.strength[i]),
+            }
+          : null
         : {
             pointCount: field.result.pointCount,
             colourAt: (i: number) => colourForMinutes(field.result.minutes[i]),

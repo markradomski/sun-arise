@@ -30,8 +30,22 @@ export interface OverlaySource {
  */
 const OVERLAY_ALPHA = 0.62;
 
-/** Output pixels per analytical sample, so the feather has room to ramp. */
+/**
+ * Output pixels per analytical sample, so the feather has room to ramp.
+ *
+ * Eight is plenty for the 31-cell field a single house produces. A field
+ * covering houses hundreds of metres apart has far more cells and needs far
+ * less enlargement, so the factor falls away to keep the texture — and the
+ * cost of encoding it — bounded. This is drawing resolution only; the
+ * analytical sample spacing is untouched.
+ */
 const FEATHER_RESOLUTION = 8;
+const MAX_TEXTURE_PIXELS = 1024;
+
+function featherResolution(cols: number, rows: number): number {
+  const largest = Math.max(cols, rows, 1);
+  return Math.max(1, Math.min(FEATHER_RESOLUTION, Math.floor(MAX_TEXTURE_PIXELS / largest)));
+}
 
 /**
  * Frames to wait for a prepared layer before swapping regardless. Only a
@@ -175,8 +189,9 @@ export class HeatmapOverlay {
     // with the same bilinear smoothing the GPU would have applied, and the
     // mask is written over the enlarged image; the exposure data itself is
     // still only ever read at the sample positions above.
-    const width = grid.cols * FEATHER_RESOLUTION;
-    const height = grid.rows * FEATHER_RESOLUTION;
+    const resolution = featherResolution(grid.cols, grid.rows);
+    const width = grid.cols * resolution;
+    const height = grid.rows * resolution;
     this.canvas.width = width;
     this.canvas.height = height;
 

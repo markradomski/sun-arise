@@ -239,3 +239,39 @@ A–C are where the value is and carry nearly all the risk of being wrong; E is 
 | Scope creep into a camera-spec tool | Dilutes the solar product | Keep the mode behind its own panel; share primitives, not concerns |
 
 **Assumptions to confirm before building:** that the mount should be modelled as a point with a height rather than a full structure; that bare-earth visibility is useful enough to act on; and that this belongs in Sun Arise at all rather than as a sibling app sharing the `optics/` and `scene/` modules. The last one is worth deciding before stage A — the shared ground is terrain and geometry, and the two products otherwise have very little to say to each other.
+
+---
+
+## Appendix — sunlight field coverage with multiple houses
+
+Recorded here because it was found while investigating a reported multi-house
+occlusion bug, and it constrains any future analysis over a spread-out site.
+
+**Occlusion is not the limitation.** Every placed house is passed to the solar
+engine, and `directSunMinutes` tests the sample against all of them. A house
+standing outside the analysed area still casts into it correctly: with a second
+house 32 m west of the grid centre — beyond the sampled area — the shaded cell
+count rose from 1229 to 1381, because its shadow reached inside.
+
+**Coverage is the limitation.** The ground grid is 60 m square at 2 m spacing,
+centred on the baseline placement if one exists and otherwise on the *first*
+house. A second house more than about 30 m from that centre has neither itself
+nor, usually, its shadow inside the sampled region, so the overlay shows nothing
+for it. Measured at Sydney midwinter, 15:00:
+
+| Second house, east of centre | Shaded cells |
+|---|---|
+| 20 m (inside the grid) | 2266 |
+| 32 m | 1229 |
+| 45 m | 1229 |
+| 70 m | 1229 |
+
+1229 is the single-house value. The drop is the second house leaving the
+sampled area, not leaving the calculation.
+
+**Recommended improvement, not taken here:** centre the grid on the bounding box
+of all houses rather than on one of them, and size it to that extent plus a
+margin for the longest shadow of the day. Both the sample count and the
+per-update cost grow with the square of the extent, so this needs a deliberate
+budget — either a coarser spacing at larger extents, or an explicit cap with the
+coverage boundary drawn so the user can see what was analysed.
