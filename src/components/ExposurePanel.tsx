@@ -33,6 +33,9 @@ interface Props {
   fieldEnabled: boolean;
   fieldPending: boolean;
   mode: FieldMode;
+  /** Master overlay opacity, display only. */
+  opacity: number;
+  onOpacity: (opacity: number) => void;
   /** Instantaneous reading for the inspected point, in NOW mode. */
   instant: InstantPoint | null;
   sunAltitudeDeg: number;
@@ -114,6 +117,27 @@ export default function ExposurePanel(props: Props) {
             <p className="note">
               Direct sunlight at {formatTime(props.date, props.zone.timeZone)}
             </p>
+          </div>
+        )}
+
+        {props.fieldEnabled && (
+          <div className="slider-field">
+            <div className="field-row">
+              <label className="field-label" htmlFor="sunlight-opacity">
+                Overlay strength
+              </label>
+              <span className="field-value">{Math.round(props.opacity * 100)}%</span>
+            </div>
+            <input
+              id="sunlight-opacity"
+              className="range"
+              type="range"
+              min={15}
+              max={100}
+              step={5}
+              value={Math.round(props.opacity * 100)}
+              onChange={(event) => props.onOpacity(Number(event.target.value) / 100)}
+            />
           </div>
         )}
 

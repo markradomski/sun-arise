@@ -14,6 +14,12 @@ import { featherAlpha } from "../scene/featherMask";
 export interface OverlaySource {
   pointCount: number;
   colourAt(index: number): [number, number, number];
+  /**
+   * How solid this sample should be, 0 to 1, before the boundary feather and
+   * the layer's own opacity. Lets well-lit ground step back so the imagery
+   * reads through it while shade stays legible.
+   */
+  opacityAt(index: number): number;
 }
 
 /**
@@ -28,7 +34,8 @@ export interface OverlaySource {
  * makes it continuous is the GPU's texture filtering, so no interpolated value
  * ever enters the exposure data.
  */
-const OVERLAY_ALPHA = 0.62;
+/** Master opacity the user can raise or lower; never affects the analysis. */
+export const DEFAULT_OVERLAY_OPACITY = 0.62;
 
 /**
  * Output pixels per analytical sample, so the feather has room to ramp.
@@ -64,6 +71,7 @@ export class HeatmapOverlay {
   private dataCanvas = document.createElement("canvas");
   /** Starts hidden: the layer is attached before the map is ever shown. */
   private visible = false;
+  private opacity = DEFAULT_OVERLAY_OPACITY;
   /** Milliseconds spent in the most recent update. */
   lastUpdateMs = 0;
   /**
@@ -86,7 +94,20 @@ export class HeatmapOverlay {
    */
   setVisible(visible: boolean) {
     this.visible = visible;
-    if (this.layer) this.layer.alpha = visible ? OVERLAY_ALPHA : 0;
+    this.applyAlpha();
+  }
+
+  /**
+   * Master opacity. A blend factor on the drawn layer, so changing it costs a
+   * frame and cannot invalidate a field, resample terrain or repaint anything.
+   */
+  setOpacity(opacity: number) {
+    this.opacity = Math.min(1, Math.max(0, opacity));
+    this.applyAlpha();
+  }
+
+  private applyAlpha() {
+    if (this.layer) this.layer.alpha = this.visible ? this.opacity : 0;
   }
 
   async update(grid: Grid | null, source: OverlaySource | null) {
@@ -126,7 +147,7 @@ export class HeatmapOverlay {
     if (token !== this.updateToken) return;
 
     const previous = this.layer;
-    next.alpha = this.visible ? OVERLAY_ALPHA : 0;
+    next.alpha = this.visible ? this.opacity : 0;
     this.layer = next;
     this.pending = null;
     if (previous) this.viewer.imageryLayers.remove(previous, true);
@@ -179,7 +200,9 @@ export class HeatmapOverlay {
         image.data[pixel] = r;
         image.data[pixel + 1] = g;
         image.data[pixel + 2] = b;
-        image.data[pixel + 3] = 255;
+        image.data[pixel + 3] = Math.round(
+          255 * Math.min(1, Math.max(0, source.opacityAt(sample))),
+        );
       }
     }
     sourceContext.putImageData(image, 0, 0);
@@ -203,12 +226,21 @@ export class HeatmapOverlay {
     context.clearRect(0, 0, width, height);
     context.drawImage(samples, 0, 0, width, height);
 
+    // The feather is applied in metres, so it looks the same on a 60 m field
+    // and on one covering houses hundreds of metres apart, and the same on a
+    // rectangle's long and short edges.
+    const halfEast = grid.extentMeters / 2;
+    const halfNorth = grid.extentNorthMeters / 2;
+
     const masked = context.getImageData(0, 0, width, height);
     for (let y = 0; y < height; y += 1) {
-      const v = (y + 0.5) / height;
+      // Image rows run north to south; the grid runs south to north.
+      const north = halfNorth - ((y + 0.5) / height) * grid.extentNorthMeters;
       for (let x = 0; x < width; x += 1) {
-        const u = (x + 0.5) / width;
-        masked.data[(y * width + x) * 4 + 3] = Math.round(255 * featherAlpha(u, v));
+        const east = ((x + 0.5) / width) * grid.extentMeters - halfEast;
+        const index = (y * width + x) * 4;
+        const fade = featherAlpha(east, north, halfEast, halfNorth);
+        masked.data[index + 3] = Math.round(masked.data[index + 3] * fade);
       }
     }
     context.putImageData(masked, 0, 0);

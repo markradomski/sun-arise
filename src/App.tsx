@@ -32,7 +32,7 @@ import {
   instantPoint,
   type InstantField,
 } from "./solar/instantField";
-import { instantColour } from "./solar/instantRamp";
+import { instantColour, instantOpacity } from "./solar/instantRamp";
 import { instantMatchesField } from "./scene/overlayPairing";
 import { FrustumLayer } from "./cesium/FrustumLayer";
 import { Geocoder } from "./cesium/geocode";
@@ -45,7 +45,7 @@ import {
   type InstallationCamera,
 } from "./optics/camera";
 import { classifyQuery } from "./scene/location";
-import { colourForMinutes } from "./solar/exposureRamp";
+import { colourForMinutes, opacityForMinutes } from "./solar/exposureRamp";
 import { eastNorthOffset } from "./scene/geo";
 import { HeatmapOverlay } from "./cesium/HeatmapOverlay";
 import { occluderFor } from "./scene/occluders";
@@ -113,6 +113,7 @@ export default function App() {
   const objects = useSolarHouseStore((s) => s.objects);
   const fieldEnabled = useSolarHouseStore((s) => s.fieldEnabled);
   const fieldMode = useSolarHouseStore((s) => s.fieldMode);
+  const fieldOpacity = useSolarHouseStore((s) => s.fieldOpacity);
   const season = useSolarHouseStore((s) => s.season);
   const baseline = useSolarHouseStore((s) => s.baseline);
   const terrainResults = useSolarHouseStore((s) => s.terrain);
@@ -436,6 +437,12 @@ export default function App() {
     fieldOverlayRef.current?.setVisible(fieldEnabled);
   }, [fieldEnabled]);
 
+  // Opacity is a blend factor on the drawn layer. Deliberately its own effect,
+  // touching nothing the field computation depends on.
+  useEffect(() => {
+    fieldOverlayRef.current?.setOpacity(fieldOpacity);
+  }, [fieldOpacity]);
+
   useEffect(() => {
     const scene = sceneRef.current;
     const overlay = fieldOverlayRef.current;
@@ -616,11 +623,13 @@ export default function App() {
           ? {
               pointCount: instant.result.pointCount,
               colourAt: (i: number) => instantColour(instant.result.strength[i]),
+              opacityAt: (i: number) => instantOpacity(instant.result.strength[i]),
             }
           : null
         : {
             pointCount: field.result.pointCount,
             colourAt: (i: number) => colourForMinutes(field.result.minutes[i]),
+            opacityAt: (i: number) => opacityForMinutes(field.result.minutes[i]),
           };
     if (!source) return;
 
@@ -931,6 +940,10 @@ export default function App() {
           fieldEnabled={fieldEnabled}
           fieldPending={fieldPending}
           mode={fieldMode}
+          opacity={fieldOpacity}
+          onOpacity={(value) =>
+            useSolarHouseStore.getState().setFieldOpacity(value)
+          }
           instant={instantProbe}
           sunAltitudeDeg={solar.altitudeDeg}
           date={date}

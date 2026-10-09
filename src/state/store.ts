@@ -10,6 +10,7 @@ import {
 import type { FootprintTerrain } from "../scene/terrainAnalysis";
 import type { Season } from "../solar/seasons";
 import type { FieldMode } from "../solar/fieldMode";
+import { DEFAULT_OVERLAY_OPACITY } from "../cesium/HeatmapOverlay";
 import type { BoxOccluder } from "../solar/exposure";
 import type { InstallationCamera } from "../optics/camera";
 import { constrainCamera } from "../optics/camera";
@@ -33,6 +34,8 @@ export interface SolarHouseState {
   fieldEnabled: boolean;
   /** What the sunlight overlay represents, independent of its visibility. */
   fieldMode: FieldMode;
+  /** Master opacity of the sunlight overlay. Display only; never analytical. */
+  fieldOpacity: number;
   /** Active seasonal preset, or null when analysing an arbitrary date. */
   season: Season | null;
   /**
@@ -63,6 +66,7 @@ export interface SolarHouseState {
   armProbe(armed: boolean): void;
   setFieldEnabled(enabled: boolean): void;
   setFieldMode(mode: FieldMode): void;
+  setFieldOpacity(opacity: number): void;
   setSeason(season: Season | null): void;
   setBaseline(baseline: BoxOccluder[] | null): void;
   setAppMode(mode: AppMode): void;
@@ -89,6 +93,7 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   probeArmed: false,
   fieldEnabled: false,
   fieldMode: "NOW",
+  fieldOpacity: DEFAULT_OVERLAY_OPACITY,
   season: null,
   baseline: null,
   appMode: "SOLAR",
@@ -197,6 +202,10 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
 
   setFieldMode(mode) {
     set({ fieldMode: mode });
+  },
+
+  setFieldOpacity(opacity) {
+    set({ fieldOpacity: Math.min(1, Math.max(0.15, opacity)) });
   },
 
   setSeason(season) {

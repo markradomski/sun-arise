@@ -79,3 +79,30 @@ export function colourForMinutes(minutes: number): [number, number, number] {
 function rgbCss(rgb: [number, number, number]): string {
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
+
+/**
+ * How solid the overlay should be for a given number of hours.
+ *
+ * A site is mostly well-lit, so painting every hour at the same opacity turns
+ * the analysis into a single wash over the imagery. Ground that receives a lot
+ * of sun is the least interesting part of the answer, so it is drawn lightly
+ * and lets the satellite image through; shade is where the information is, and
+ * stays solid.
+ *
+ * This is a function of the value alone, never of the field's contents, so the
+ * same exposure looks the same whatever else is on screen and however large
+ * the field has grown.
+ */
+export function opacityForHours(hours: number): number {
+  const t = Math.min(1, Math.max(0, hours / TOP_HOURS));
+  return SHADE_OPACITY + (SUN_OPACITY - SHADE_OPACITY) * t;
+}
+
+export function opacityForMinutes(minutes: number): number {
+  return opacityForHours(minutes / 60);
+}
+
+/** Fully shaded ground: the overlay carries the information here. */
+const SHADE_OPACITY = 1;
+/** Full sun: the imagery carries it, and the overlay steps back. */
+const SUN_OPACITY = 0.42;

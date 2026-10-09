@@ -4,6 +4,8 @@ import {
   colourForMinutes,
   LEGEND_GRADIENT_CSS,
   LEGEND_TICKS,
+  opacityForHours,
+  opacityForMinutes,
 } from "./exposureRamp";
 
 /** Perceived lightness, good enough to assert monotonicity. */
@@ -99,6 +101,41 @@ describe("exposureRamp", () => {
         expect(channel).toBeGreaterThanOrEqual(0);
         expect(channel).toBeLessThanOrEqual(255);
       }
+    }
+  });
+});
+
+describe("opacity", () => {
+  it("is solid in shade and light in full sun", () => {
+    expect(opacityForHours(0)).toBe(1);
+    expect(opacityForHours(14)).toBeLessThan(0.5);
+  });
+
+  it("falls monotonically as hours rise", () => {
+    let previous = opacityForHours(0);
+    for (let hours = 0; hours <= 14; hours += 0.5) {
+      const value = opacityForHours(hours);
+      expect(value).toBeLessThanOrEqual(previous + 1e-9);
+      previous = value;
+    }
+  });
+
+  it("clamps outside the scale rather than extrapolating", () => {
+    expect(opacityForHours(-3)).toBe(opacityForHours(0));
+    expect(opacityForHours(40)).toBe(opacityForHours(14));
+  });
+
+  it("depends on the value alone, not on the field", () => {
+    // The same exposure must look the same however large the field has grown
+    // or how many houses are in it.
+    expect(opacityForHours(6)).toBe(opacityForHours(6));
+    expect(opacityForMinutes(360)).toBe(opacityForHours(6));
+  });
+
+  it("never disappears entirely", () => {
+    for (const hours of [0, 3, 7, 11, 14]) {
+      expect(opacityForHours(hours)).toBeGreaterThan(0.2);
+      expect(opacityForHours(hours)).toBeLessThanOrEqual(1);
     }
   });
 });
