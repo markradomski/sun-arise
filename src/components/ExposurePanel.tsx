@@ -32,6 +32,8 @@ interface Props {
   armed: boolean;
   fieldEnabled: boolean;
   fieldPending: boolean;
+  /** The analysed area had to be clipped to stay within the sample budget. */
+  coverageClipped: boolean;
   mode: FieldMode;
   /** Master overlay opacity, display only. */
   opacity: number;
@@ -139,6 +141,13 @@ export default function ExposurePanel(props: Props) {
               onChange={(event) => props.onOpacity(Number(event.target.value) / 100)}
             />
           </div>
+        )}
+
+        {props.fieldEnabled && props.coverageClipped && (
+          <p className="note warn">
+            Sunlight coverage limited. Some areas fall outside the analysed
+            region.
+          </p>
         )}
 
         {props.fieldEnabled && props.fieldPending && (

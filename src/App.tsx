@@ -139,6 +139,8 @@ export default function App() {
     overlayMs: number;
     /** Inputs this field was computed from, so it can be reused or retired. */
     signature: string;
+    /** True when the houses are spread wider than the sample budget allows. */
+    clipped: boolean;
   } | null>(null);
   const addHouse = useSolarHouseStore((s) => s.addHouse);
   const updateObject = useSolarHouseStore((s) => s.updateObject);
@@ -531,6 +533,7 @@ export default function App() {
         baseline: baselineResult,
         overlayMs: overlay.lastUpdateMs,
         signature,
+        clipped: bounds.clamped,
       });
       setFieldPending(false);
     })().catch(console.error);
@@ -939,6 +942,7 @@ export default function App() {
           armed={probeArmed}
           fieldEnabled={fieldEnabled}
           fieldPending={fieldPending}
+          coverageClipped={field?.clipped ?? false}
           mode={fieldMode}
           opacity={fieldOpacity}
           onOpacity={(value) =>
