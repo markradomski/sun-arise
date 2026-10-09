@@ -19,6 +19,8 @@ import {
   MIN_TILT_DEG,
   nearestLensPreset,
   orientationVector,
+  PROPOSED_LULWORTH_CAMERA,
+  isProposedLulworthPosition,
   verticalFovDeg,
 } from "./camera";
 import type { GeoPosition } from "../scene/types";
@@ -202,5 +204,101 @@ describe("camera state", () => {
       mountHeightMeters: Number.NaN,
     });
     expect(Number.isFinite(camera.mountHeightMeters)).toBe(true);
+  });
+});
+
+describe("proposed Lulworth position", () => {
+  it("carries the requested aim and mount height", () => {
+    expect(PROPOSED_LULWORTH_CAMERA.latitude).toBeCloseTo(-41.001528744069276, 12);
+    expect(PROPOSED_LULWORTH_CAMERA.longitude).toBeCloseTo(147.07141571573635, 12);
+    expect(PROPOSED_LULWORTH_CAMERA.bearingDeg).toBe(0);
+    expect(PROPOSED_LULWORTH_CAMERA.tiltDeg).toBe(6);
+    expect(PROPOSED_LULWORTH_CAMERA.mountHeightMeters).toBe(6);
+  });
+
+  it("carries no elevation of its own", () => {
+    // Height must come from sampled terrain, never from a constant.
+    expect(PROPOSED_LULWORTH_CAMERA).not.toHaveProperty("height");
+    expect(PROPOSED_LULWORTH_CAMERA).not.toHaveProperty("elevation");
+  });
+
+  it("builds a camera that keeps the existing default field of view", () => {
+    const camera = createCamera(
+      "surf-cam-1",
+      {
+        latitude: PROPOSED_LULWORTH_CAMERA.latitude,
+        longitude: PROPOSED_LULWORTH_CAMERA.longitude,
+        height: 20.5,
+      },
+      {
+        bearingDeg: PROPOSED_LULWORTH_CAMERA.bearingDeg,
+        tiltDeg: PROPOSED_LULWORTH_CAMERA.tiltDeg,
+        mountHeightMeters: PROPOSED_LULWORTH_CAMERA.mountHeightMeters,
+      },
+    );
+    expect(camera.horizontalFovDeg).toBe(DEFAULT_CAMERA.horizontalFovDeg);
+    expect(camera.bearingDeg).toBe(0);
+    expect(camera.tiltDeg).toBe(6);
+  });
+
+  it("derives elevation from sampled terrain plus the mount height", () => {
+    for (const terrain of [0, 20.5, 47.4]) {
+      const camera = createCamera(
+        "surf-cam-1",
+        {
+          latitude: PROPOSED_LULWORTH_CAMERA.latitude,
+          longitude: PROPOSED_LULWORTH_CAMERA.longitude,
+          height: terrain,
+        },
+        { mountHeightMeters: PROPOSED_LULWORTH_CAMERA.mountHeightMeters },
+      );
+      expect(camera.ground.height).toBe(terrain);
+      expect(cameraElevationMeters(camera)).toBeCloseTo(terrain + 6, 10);
+    }
+  });
+
+  it("recognises a camera still standing on the proposal", () => {
+    expect(isProposedLulworthPosition(PROPOSED_LULWORTH_CAMERA)).toBe(true);
+    // Half a metre away is still the same mount for labelling purposes.
+    expect(
+      isProposedLulworthPosition({
+        latitude: PROPOSED_LULWORTH_CAMERA.latitude + 0.000004,
+        longitude: PROPOSED_LULWORTH_CAMERA.longitude,
+      }),
+    ).toBe(true);
+  });
+
+  it("stops claiming the proposal once the camera is moved", () => {
+    // Ten metres north is a position the user chose, not the proposal.
+    expect(
+      isProposedLulworthPosition({
+        latitude: PROPOSED_LULWORTH_CAMERA.latitude + 0.00009,
+        longitude: PROPOSED_LULWORTH_CAMERA.longitude,
+      }),
+    ).toBe(false);
+    expect(
+      isProposedLulworthPosition({ latitude: -33.87, longitude: 151.21 }),
+    ).toBe(false);
+  });
+
+  it("keeps user-adjusted settings when the mount is re-placed", () => {
+    // Re-placing carries the angles the user chose onto the new ground.
+    const adjusted = createCamera(
+      "surf-cam-1",
+      { latitude: -41.0015, longitude: 147.0714, height: 20 },
+      { bearingDeg: 295, tiltDeg: 14, horizontalFovDeg: 84, mountHeightMeters: 9 },
+    );
+    const moved = createCamera("surf-cam-1", {
+      latitude: -41.0005,
+      longitude: 147.0721,
+      height: 26,
+    }, { ...adjusted, label: "Camera 1" });
+
+    expect(moved.bearingDeg).toBe(295);
+    expect(moved.tiltDeg).toBe(14);
+    expect(moved.horizontalFovDeg).toBe(84);
+    expect(moved.mountHeightMeters).toBe(9);
+    expect(moved.ground.height).toBe(26);
+    expect(moved.label).toBe("Camera 1");
   });
 });

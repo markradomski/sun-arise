@@ -14,6 +14,7 @@ import {
   type InstallationCamera,
 } from "../optics/camera";
 import { horizonDistanceMeters } from "../optics/geodesy";
+import { isProposedLulworthPosition } from "../optics/camera";
 import { formatCoordinates } from "../scene/location";
 
 interface Props {
@@ -89,6 +90,15 @@ export default function SurfCamPanel(props: Props) {
                 <dd>{cameraElevationMeters(camera).toFixed(1)} m</dd>
               </div>
             </dl>
+            {isProposedLulworthPosition(camera.ground) && (
+              <p className="note warn">
+                Proposed position only. This coordinate came from geocoding 43
+                Hurst Street and has not been confirmed on the ground, and the
+                terrain model carries no trees, fences or buildings. Drag or
+                re-place the camera to test a mount you have verified.
+              </p>
+            )}
+
             <p className="note muted">
               Elevations are metres above the WGS84 ellipsoid, not above mean
               sea level. Mount height is measured from the sampled terrain.

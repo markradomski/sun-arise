@@ -42,6 +42,7 @@ import {
   cameraElevationMeters,
   cesiumPitchDeg,
   createCamera,
+  PROPOSED_LULWORTH_CAMERA,
   type InstallationCamera,
 } from "./optics/camera";
 import { classifyQuery } from "./scene/location";
@@ -92,6 +93,8 @@ export default function App() {
   /** Whether the heatmap's imagery layer has been attached to the globe yet. */
   const overlayAttachedRef = useRef(false);
   const lastInstantRef = useRef(0);
+  /** Guards the one-time Lulworth placement so it never reruns. */
+  const surfCamSeededRef = useRef(false);
   const frustumRef = useRef<FrustumLayer | null>(null);
   const geocoderRef = useRef<Geocoder | null>(null);
   /** Identifies the newest location lookup so a slow one cannot overwrite it. */
@@ -287,8 +290,13 @@ export default function App() {
         const store = useSolarHouseStore.getState();
 
         if (store.surfCamArmed) {
+          // A camera the user places is their own, so it keeps their angles
+          // but not the label describing the proposal.
           store.setSurfCam(
-            createCamera("surf-cam-1", location, store.surfCam ?? undefined),
+            createCamera("surf-cam-1", location, {
+              ...(store.surfCam ?? {}),
+              label: "Camera 1",
+            }),
           );
           store.armSurfCam(false);
           return;
@@ -648,6 +656,78 @@ export default function App() {
   useEffect(() => {
     frustumRef.current?.update(appMode === "SURF_CAM" ? surfCam : null);
   }, [appMode, surfCam]);
+
+  /**
+   * Places the proposed Lulworth camera the first time Surf Cam is opened.
+   *
+   * Once only, guarded by a ref rather than by the camera being absent, so
+   * switching back and forth never discards a camera the user has placed or
+   * adjusted — and removing the camera stays removed.
+   *
+   * It touches nothing belonging to Solar Analysis: no houses move and the
+   * active site is left alone. Only the navigation camera is flown, to bring
+   * the mount and its frustum into view.
+   */
+  useEffect(() => {
+    if (appMode !== "SURF_CAM" || surfCamSeededRef.current) return;
+    if (useSolarHouseStore.getState().surfCam) {
+      surfCamSeededRef.current = true;
+      return;
+    }
+
+    const scene = sceneRef.current;
+    const provider = scene?.getTerrainProvider();
+    // Without real terrain there is no ground elevation to mount against, and
+    // inventing one would put the camera at a height nothing supports.
+    if (!scene || !provider || terrainStatus !== "READY") return;
+
+    surfCamSeededRef.current = true;
+    let cancelled = false;
+
+    void (async () => {
+      const position = {
+        latitude: PROPOSED_LULWORTH_CAMERA.latitude,
+        longitude: PROPOSED_LULWORTH_CAMERA.longitude,
+      };
+
+      let elevation: number | undefined;
+      try {
+        [elevation] = await sampleElevations(provider, [position]);
+      } catch (error) {
+        console.warn("[surf-cam] Terrain sampling failed for the proposal.", error);
+      }
+      if (cancelled || elevation === undefined) return;
+
+      const store = useSolarHouseStore.getState();
+      if (store.surfCam) return;
+
+      store.setSurfCam(
+        createCamera(
+          "surf-cam-1",
+          { ...position, height: elevation },
+          {
+            label: "Proposed Lulworth position",
+            bearingDeg: PROPOSED_LULWORTH_CAMERA.bearingDeg,
+            tiltDeg: PROPOSED_LULWORTH_CAMERA.tiltDeg,
+            mountHeightMeters: PROPOSED_LULWORTH_CAMERA.mountHeightMeters,
+          },
+        ),
+      );
+
+      // Stand off to the south so the mount and the north-facing frustum are
+      // both in frame. This moves the navigation view only; look-through
+      // stays a deliberate action.
+      cameraRef.current?.flyTo(
+        "SITE",
+        { ...position, height: elevation },
+        { range: 430, pitchDeg: -32, headingDeg: 0 },
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appMode, terrainStatus]);
 
   // Leaving the look-through state by any route — the button, a mode switch,
   // unmount — must hand terrain collision back to the navigation camera.

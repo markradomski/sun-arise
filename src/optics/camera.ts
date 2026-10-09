@@ -177,3 +177,45 @@ export function createCamera(
 ): InstallationCamera {
   return constrainCamera({ ...DEFAULT_CAMERA, ...overrides, id, ground });
 }
+
+/**
+ * The candidate mounting point being evaluated at Lulworth.
+ *
+ * This is a **proposal, not a verified installation**. The coordinate came
+ * from geocoding 43 Hurst Street and has not been confirmed on the ground;
+ * nothing here establishes that a mast could stand at this spot, that the
+ * owner permits it, or that the view is clear. Cesium World Terrain is a
+ * bare-earth model, so trees, fences and neighbouring buildings are absent
+ * from any sightline it supports.
+ *
+ * The elevation is deliberately absent: it is sampled from terrain so the
+ * mount height stays relative to real ground rather than to a guess.
+ */
+export const PROPOSED_LULWORTH_CAMERA = {
+  latitude: -41.001528744069276,
+  longitude: 147.07141571573635,
+  bearingDeg: 0,
+  tiltDeg: 6,
+  mountHeightMeters: 6,
+} as const;
+
+/** Metres within which a mount still counts as sitting on the proposal. */
+const PROPOSED_MATCH_METERS = 1;
+
+/**
+ * Whether a camera still stands on the proposed position, so the UI can say
+ * the coordinate is unverified while that remains true and stop once the user
+ * has placed the camera somewhere of their own choosing.
+ */
+export function isProposedLulworthPosition(ground: {
+  latitude: number;
+  longitude: number;
+}): boolean {
+  const metresPerDegree = 111_320;
+  const north = (ground.latitude - PROPOSED_LULWORTH_CAMERA.latitude) * metresPerDegree;
+  const east =
+    (ground.longitude - PROPOSED_LULWORTH_CAMERA.longitude) *
+    metresPerDegree *
+    Math.cos((PROPOSED_LULWORTH_CAMERA.latitude * Math.PI) / 180);
+  return Math.hypot(east, north) <= PROPOSED_MATCH_METERS;
+}
