@@ -42,7 +42,6 @@ import {
   cameraElevationMeters,
   cesiumPitchDeg,
   createCamera,
-  PROPOSED_LULWORTH_CAMERA,
   type InstallationCamera,
 } from "./optics/camera";
 import { classifyQuery } from "./scene/location";
@@ -51,7 +50,7 @@ import { eastNorthOffset } from "./scene/geo";
 import { HeatmapOverlay } from "./cesium/HeatmapOverlay";
 import { occluderFor } from "./scene/occluders";
 import { terrainPolicyFor, type GeoPosition } from "./scene/types";
-import { DEFAULT_SITE } from "./scene/site";
+import { STARTUP_SITE } from "./scene/startupSite";
 import {
   selectOrderedObjects,
   selectSelectedObject,
@@ -68,7 +67,7 @@ const INSTANT_INTERVAL_MS = 180;
 
 const INITIAL_DATE = new Date();
 
-const INITIAL_SITE = DEFAULT_SITE;
+const INITIAL_SITE = STARTUP_SITE.position;
 
 function geocodeMessage(status: string, query: string): string {
   switch (status) {
@@ -93,7 +92,7 @@ export default function App() {
   /** Whether the heatmap's imagery layer has been attached to the globe yet. */
   const overlayAttachedRef = useRef(false);
   const lastInstantRef = useRef(0);
-  /** Guards the one-time Lulworth placement so it never reruns. */
+  /** Guards the one-time camera placement so it never reruns. */
   const surfCamSeededRef = useRef(false);
   const frustumRef = useRef<FrustumLayer | null>(null);
   const geocoderRef = useRef<Geocoder | null>(null);
@@ -345,7 +344,10 @@ export default function App() {
     // seed only once and always sync the fresh layer against current state.
     const store = useSolarHouseStore.getState();
     if (store.order.length === 0) {
-      store.setSite({ latitude: INITIAL_SITE.latitude, longitude: INITIAL_SITE.longitude });
+      store.setSite({
+        latitude: INITIAL_SITE.latitude,
+        longitude: INITIAL_SITE.longitude,
+      });
       store.addHouse(INITIAL_SITE);
     } else {
       layer.sync(selectOrderedObjects(store)).catch(console.error);
@@ -658,75 +660,26 @@ export default function App() {
   }, [appMode, surfCam]);
 
   /**
-   * Places the proposed Lulworth camera the first time Surf Cam is opened.
+   * Places the proposed camera on the startup site, so the opening scene holds
+   * both the house being analysed and the mount being considered.
    *
    * Once only, guarded by a ref rather than by the camera being absent, so
-   * switching back and forth never discards a camera the user has placed or
-   * adjusted — and removing the camera stays removed.
-   *
-   * It touches nothing belonging to Solar Analysis: no houses move and the
-   * active site is left alone. Only the navigation camera is flown, to bring
-   * the mount and its frustum into view.
+   * switching workflows never discards a camera the user has placed or
+   * adjusted, and a removed camera stays removed. It touches nothing belonging
+   * to Solar Analysis: no houses move and the site is unchanged. The view is
+   * only flown when Surf Cam is already open, since seeding must not pull the
+   * navigation camera away from whatever the user is looking at.
    */
   useEffect(() => {
-    if (appMode !== "SURF_CAM" || surfCamSeededRef.current) return;
+    if (surfCamSeededRef.current) return;
     if (useSolarHouseStore.getState().surfCam) {
       surfCamSeededRef.current = true;
       return;
     }
-
-    const scene = sceneRef.current;
-    const provider = scene?.getTerrainProvider();
-    // Without real terrain there is no ground elevation to mount against, and
-    // inventing one would put the camera at a height nothing supports.
-    if (!scene || !provider || terrainStatus !== "READY") return;
+    if (terrainStatus !== "READY") return;
 
     surfCamSeededRef.current = true;
-    let cancelled = false;
-
-    void (async () => {
-      const position = {
-        latitude: PROPOSED_LULWORTH_CAMERA.latitude,
-        longitude: PROPOSED_LULWORTH_CAMERA.longitude,
-      };
-
-      let elevation: number | undefined;
-      try {
-        [elevation] = await sampleElevations(provider, [position]);
-      } catch (error) {
-        console.warn("[surf-cam] Terrain sampling failed for the proposal.", error);
-      }
-      if (cancelled || elevation === undefined) return;
-
-      const store = useSolarHouseStore.getState();
-      if (store.surfCam) return;
-
-      store.setSurfCam(
-        createCamera(
-          "surf-cam-1",
-          { ...position, height: elevation },
-          {
-            label: "Proposed Lulworth position",
-            bearingDeg: PROPOSED_LULWORTH_CAMERA.bearingDeg,
-            tiltDeg: PROPOSED_LULWORTH_CAMERA.tiltDeg,
-            mountHeightMeters: PROPOSED_LULWORTH_CAMERA.mountHeightMeters,
-          },
-        ),
-      );
-
-      // Stand off to the south so the mount and the north-facing frustum are
-      // both in frame. This moves the navigation view only; look-through
-      // stays a deliberate action.
-      cameraRef.current?.flyTo(
-        "SITE",
-        { ...position, height: elevation },
-        { range: 430, pitchDeg: -32, headingDeg: 0 },
-      );
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    void placeSurfCam(appMode === "SURF_CAM");
   }, [appMode, terrainStatus]);
 
   // Leaving the look-through state by any route — the button, a mode switch,
@@ -922,6 +875,46 @@ export default function App() {
     cameraRef.current?.flyTo("SITE", camera ? camera.ground : INITIAL_SITE);
   };
 
+  /**
+   * Puts the virtual camera on the startup site, sampling ground elevation so
+   * the mast height stays relative to real terrain. Without real terrain
+   * nothing is placed: mounting at an invented height would be worse than no
+   * camera at all.
+   */
+  const placeSurfCam = async (frame: boolean) => {
+    const scene = sceneRef.current;
+    const provider = scene?.getTerrainProvider();
+    if (!scene || !provider) return;
+
+    const position = STARTUP_SITE.position;
+    let elevation: number | undefined;
+    try {
+      [elevation] = await sampleElevations(provider, [position]);
+    } catch (error) {
+      console.warn("[surf-cam] Terrain sampling failed for the mount.", error);
+      return;
+    }
+    if (elevation === undefined) return;
+
+    useSolarHouseStore.getState().setSurfCam(
+      createCamera(
+        "surf-cam-1",
+        { ...position, height: elevation },
+        { label: "Proposed Lulworth position", ...STARTUP_SITE.mount },
+      ),
+    );
+
+    if (frame) {
+      // Stand off to the south so the mount and its frustum are both in
+      // frame. Navigation view only; look-through stays a deliberate act.
+      cameraRef.current?.flyTo(
+        "SITE",
+        { ...position, height: elevation },
+        { range: 430, pitchDeg: -32, headingDeg: 0 },
+      );
+    }
+  };
+
   const handleCameraMode = (mode: CameraMode) => {
     setCameraMode(mode);
     const store = useSolarHouseStore.getState();
@@ -954,7 +947,7 @@ export default function App() {
       <div ref={containerRef} className="globe" />
       <div className="vignette" />
       <Controls
-        siteName={appMode === "SURF_CAM" ? "Camera siting" : "The Domain · Sydney"}
+        siteName={STARTUP_SITE.name}
         appMode={appMode}
         onAppMode={(mode) => useSolarHouseStore.getState().setAppMode(mode)}
         location={
