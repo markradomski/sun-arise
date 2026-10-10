@@ -3,8 +3,6 @@ import {
   CallbackProperty,
   Cartesian3,
   Color,
-  HeadingPitchRoll,
-  Math as CesiumMath,
   Matrix4,
   PolygonHierarchy,
   Transforms,
@@ -13,10 +11,10 @@ import {
 } from "cesium";
 import {
   cameraElevationMeters,
-  cesiumPitchDeg,
   verticalFovDeg,
   type InstallationCamera,
 } from "../optics/camera";
+import { frustumGeometry, type EnuOffset } from "../optics/frustum";
 
 /**
  * Draws the installation camera's field of view in the scene.
@@ -40,6 +38,7 @@ const AXIS_COLOR = Color.fromCssColorString("#ffffff").withAlpha(0.85);
 
 export class FrustumLayer {
   private corners: Cartesian3[] = [];
+  private centre = new Cartesian3();
   private apex = new Cartesian3();
   private entities: Entity[] = [];
   private destroyed = false;
@@ -68,37 +67,31 @@ export class FrustumLayer {
     );
     this.apex = origin;
 
-    // An east-north-up frame at the mount lets the camera's own bearing and
-    // tilt be applied directly, with no global-coordinate reasoning.
-    const frame = Transforms.headingPitchRollToFixedFrame(
-      origin,
-      HeadingPitchRoll.fromDegrees(
-        camera.bearingDeg,
-        cesiumPitchDeg(camera.tiltDeg),
-        0,
-      ),
+    const geometry = frustumGeometry(
+      {
+        bearingDeg: camera.bearingDeg,
+        tiltDeg: camera.tiltDeg,
+        horizontalFovDeg: camera.horizontalFovDeg,
+        verticalFovDeg: verticalFovDeg(camera.horizontalFovDeg),
+      },
+      DRAW_RANGE_METERS,
     );
 
-    const halfH = CesiumMath.toRadians(camera.horizontalFovDeg / 2);
-    const halfV = CesiumMath.toRadians(verticalFovDeg(camera.horizontalFovDeg) / 2);
-    const spreadRight = Math.tan(halfH) * DRAW_RANGE_METERS;
-    const spreadUp = Math.tan(halfV) * DRAW_RANGE_METERS;
-
-    // In this frame x is forward, y is right and z is up.
-    const localCorners: [number, number, number][] = [
-      [DRAW_RANGE_METERS, -spreadRight, spreadUp],
-      [DRAW_RANGE_METERS, spreadRight, spreadUp],
-      [DRAW_RANGE_METERS, spreadRight, -spreadUp],
-      [DRAW_RANGE_METERS, -spreadRight, -spreadUp],
-    ];
-
-    this.corners = localCorners.map(([forward, right, up]) =>
+    // East-north-up, not headingPitchRollToFixedFrame: the latter is also
+    // built on ENU, so its local +X is east rather than the view direction,
+    // and treating that axis as forward swings the drawn shape 90° off the
+    // camera's bearing. The aim is already resolved into ENU by
+    // `frustumGeometry`, leaving only a placement transform here.
+    const frame = Transforms.eastNorthUpToFixedFrame(origin);
+    const toWorld = (offset: EnuOffset) =>
       Matrix4.multiplyByPoint(
         frame,
-        new Cartesian3(forward, right, up),
+        new Cartesian3(offset.east, offset.north, offset.up),
         new Cartesian3(),
-      ),
-    );
+      );
+
+    this.corners = geometry.corners.map(toWorld);
+    this.centre = toWorld(geometry.centre);
   }
 
   private build() {
@@ -155,15 +148,8 @@ export class FrustumLayer {
   }
 
   private axisPositions(): Cartesian3[] {
-    const [a, b, c, d] = this.corners;
-    if (!a || !b || !c || !d) return [];
-    const sum = Cartesian3.add(
-      Cartesian3.add(a, c, new Cartesian3()),
-      Cartesian3.add(b, d, new Cartesian3()),
-      new Cartesian3(),
-    );
-    const centre = Cartesian3.multiplyByScalar(sum, 0.25, new Cartesian3());
-    return [this.apex, centre];
+    if (this.corners.length === 0) return [];
+    return [this.apex, this.centre];
   }
 
   private setVisible(visible: boolean) {
