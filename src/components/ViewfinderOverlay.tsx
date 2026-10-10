@@ -50,6 +50,7 @@ export default function ViewfinderOverlay(props: Props) {
           height: `${frame.heightFraction * 100}%`,
         }}
       >
+        <span className="viewfinder-frame-label">RECORDED FRAME</span>
         <span className="viewfinder-corner tl" />
         <span className="viewfinder-corner tr" />
         <span className="viewfinder-corner br" />
