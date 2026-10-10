@@ -1448,7 +1448,7 @@ export default function App() {
             onFrustumVisible={function (visible: boolean): void {
               throw new Error("Function not implemented.");
             }}
-            savedMounts={useSolarHouseStore.getState().savedMounts}
+            savedMounts={savedMounts}
           />
         )}
       </Controls>
