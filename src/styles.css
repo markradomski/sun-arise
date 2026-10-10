@@ -735,7 +735,24 @@ input[type="date"]:focus {
   font-variant-numeric: tabular-nums;
 }
 /* The part of the canvas the planned camera would actually record. */
-.viewfinder-frame { position: relative; }
+.viewfinder-frame {
+  position: relative;
+  box-sizing: border-box;
+  outline: 1px solid rgba(255, 255, 255, .36);
+  outline-offset: -1px;
+  background: rgba(0, 0, 0, .025);
+}
+.viewfinder-frame-label {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .13em;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .9);
+}
+
 .viewfinder-corner {
   position: absolute;
   width: 18px;
