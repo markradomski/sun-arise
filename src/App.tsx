@@ -1449,6 +1449,7 @@ export default function App() {
               throw new Error("Function not implemented.");
             }}
             savedMounts={savedMounts}
+            // Phase 2C mount comparison is being integrated.
           />
         )}
       </Controls>
