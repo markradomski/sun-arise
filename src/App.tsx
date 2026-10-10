@@ -154,6 +154,7 @@ export default function App() {
   const surfTargetArmed = useSolarHouseStore((s) => s.surfTargetArmed);
   const capture = useSolarHouseStore((s) => s.capture);
   const savedMounts = useSolarHouseStore((s) => s.savedMounts);
+  const terrainStatus = useSolarHouseStore((s) => s.terrainStatus);
   const configurationId = useSolarHouseStore((s) => s.cameraConfigurationId);
   const [mountSightLines, setMountSightLines] = useState<Record<string, SightLineAnalysis | "PENDING" | "FAILED">>({});
   const [frustumVisible, setFrustumVisible] = useState(true);
@@ -215,7 +216,6 @@ export default function App() {
   }, [savedMounts, surfTarget, terrainStatus]);
 
   const lookingThrough = useSolarHouseStore((s) => s.lookingThrough);
-  const terrainStatus = useSolarHouseStore((s) => s.terrainStatus);
   const [sightLine, setSightLine] = useState<SightLineState>({
     status: "IDLE",
   });
