@@ -596,3 +596,87 @@ input[type="date"]:focus {
   font-variant-numeric: tabular-nums;
 }
 .profile-tick-end { text-anchor: end; }
+
+/* ── Collapsible panel ──────────────────────────────────────────────────── */
+/* Width only: the panel's own height is content-driven once collapsed, and
+   animating that as well would make the rail bounce on every toggle. */
+.controls { transition: width .22s ease; }
+
+.panel-toggle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 9px;
+  background: rgba(255,255,255,.05);
+  color: #9da2aa;
+  cursor: pointer;
+  transition: background .2s ease, color .2s ease, border-color .2s ease;
+}
+.panel-toggle:hover {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.2);
+  color: #f2efe7;
+}
+.panel-toggle:focus-visible { outline: 2px solid #ffd36a; outline-offset: 2px; }
+
+/* Sits opposite the wordmark in the panel header. */
+.controls .brand .panel-toggle { margin-left: auto; }
+
+.controls.collapsed {
+  width: 68px;
+  padding: 14px 8px;
+  /* Released from the full-height stretch so the rail is only as tall as
+     its contents, leaving the rest of the scene clickable. */
+  bottom: auto;
+  overflow: hidden;
+}
+/* Out of sight, out of the tab order and out of the accessibility tree,
+   while every control inside stays mounted and keeps its state. */
+.controls.collapsed .controls-body { display: none; }
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.rail .brand-mark { font-size: 26px; }
+.rail-wordmark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  color: #9da2aa;
+  /* The tracking is applied on the right of each glyph; nudge back so the
+     stacked words read as centred. */
+  text-indent: .14em;
+}
+
+@media (max-width: 700px) {
+  /* The expanded panel is bottom-anchored and full width here, so collapsing
+     has to drop the right edge or the rail stays a full-width bar — and has
+     to re-anchor to the bottom, since the desktop rule's `bottom: auto` would
+     otherwise meet this layout's `top: auto` and strand the rail at the top,
+     over the diagnostics chip. */
+  .controls.collapsed {
+    right: auto;
+    left: 10px;
+    top: auto;
+    bottom: 10px;
+    width: 68px;
+    max-height: none;
+    padding: 12px 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .controls { transition: none; }
+  .panel-toggle { transition: none; }
+}

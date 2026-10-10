@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { SolarPosition } from "../types";
 import type { CameraMode } from "../cesium/CameraController";
 import type { CivilZone } from "../solar/timezone";
@@ -47,6 +47,41 @@ const VIEWS: { mode: CameraMode; label: string }[] = [
 ];
 
 export default function Controls(props: Props) {
+  /**
+   * Presentation only, and deliberately local to this component.
+   *
+   * Collapsing is a view preference, not scene state, so it stays out of the
+   * store. Keeping it here also means switching workflow preserves it for
+   * free: only the panel's children swap, this component never unmounts.
+   */
+  const [collapsed, setCollapsed] = useState(false);
+  const bodyId = useId();
+
+  /**
+   * Toggling swaps which of the two buttons exists, so without this the
+   * keyboard user's focus falls back to the document and their next Tab
+   * restarts from the top of the page. Move it to whichever control replaced
+   * the one they just pressed — and only then, so the panel never steals
+   * focus on first render.
+   */
+  // One ref each: the collapse button lives in the body, which stays mounted
+  // and merely hidden, so a shared ref would be left pointing at nothing the
+  // moment the rail unmounted.
+  const collapseRef = useRef<HTMLButtonElement>(null);
+  const expandRef = useRef<HTMLButtonElement>(null);
+  const refocus = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    (collapsed ? expandRef : collapseRef).current?.focus();
+  }, [collapsed]);
+
+  const toggleCollapsed = () => {
+    refocus.current = true;
+    setCollapsed((value) => !value);
+  };
+
   // Everything shown here is civil time at the *site*, not in the browser's
   // own timezone.
   const parts = civilParts(props.date, props.zone.timeZone);
@@ -59,13 +94,49 @@ export default function Controls(props: Props) {
   ].join("-");
 
   return (
-    <aside className="controls">
+    <aside className={`controls${collapsed ? " collapsed" : ""}`}>
+      {collapsed && (
+        <div className="rail">
+          <div className="brand-mark">☀</div>
+          <div className="rail-wordmark" aria-hidden="true">
+            <span>SUN</span>
+            <span>ARISE</span>
+          </div>
+          <button
+            ref={expandRef}
+            className="panel-toggle"
+            onClick={toggleCollapsed}
+            aria-expanded={false}
+            aria-controls={bodyId}
+            aria-label="Expand control panel"
+            title="Expand panel"
+          >
+            <PanelLeftOpenIcon />
+          </button>
+        </div>
+      )}
+
+      {/* Kept mounted while collapsed — hiding it preserves every control's
+          state, and `display: none` also takes it out of the tab order and
+          the accessibility tree. */}
+      <div className="controls-body" id={bodyId}>
       <div className="brand">
         <div className="brand-mark">☀</div>
         <div>
           <div className="eyebrow">SUN ARISE</div>
           <h1>{props.siteName}</h1>
         </div>
+        <button
+          ref={collapseRef}
+          className="panel-toggle"
+          onClick={toggleCollapsed}
+          aria-expanded={true}
+          aria-controls={bodyId}
+          aria-label="Collapse control panel"
+          title="Collapse panel"
+        >
+          <PanelLeftCloseIcon />
+        </button>
       </div>
 
       <div className="segmented" role="group" aria-label="Workflow">
@@ -176,7 +247,51 @@ export default function Controls(props: Props) {
       {props.children}
 
       <p className="hint">Drag the house to move it · drag the white handle to turn it</p>
+      </div>
     </aside>
+  );
+}
+
+/**
+ * Lucide `panel-left-close` and `panel-left-open`, inlined.
+ *
+ * Two icons do not justify a dependency, and the strokes inherit
+ * `currentColor` so they pick up the button's hover and focus states.
+ */
+function PanelIcon({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="17"
+      height="17"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
+      {children}
+    </svg>
+  );
+}
+
+function PanelLeftCloseIcon() {
+  return (
+    <PanelIcon>
+      <path d="m16 15-3-3 3-3" />
+    </PanelIcon>
+  );
+}
+
+function PanelLeftOpenIcon() {
+  return (
+    <PanelIcon>
+      <path d="m14 9 3 3-3 3" />
+    </PanelIcon>
   );
 }
 
