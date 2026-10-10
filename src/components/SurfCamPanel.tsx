@@ -168,9 +168,10 @@ export default function SurfCamPanel(props: Props) {
             aria-pressed={props.frustumVisible}
             onClick={() => props.onFrustumVisible(!props.frustumVisible)}
           >
-            {props.frustumVisible ? "Hide" : "Show"} frustum
+            {props.frustumVisible ? "Hide" : "Show"} external 3D frustum
           </button>
         </div>
+        <p className="note muted">The yellow 3D field-of-view lines are visible only from outside the camera. In Look through camera mode, use the 2D recording-frame guides instead.</p>
       </Section>
 
       <Section title="Camera mount">
@@ -450,10 +451,11 @@ export default function SurfCamPanel(props: Props) {
               aria-pressed={props.overlayVisible}
               onClick={() => props.onOverlayVisible(!props.overlayVisible)}
             >
-              {props.overlayVisible ? "Hide" : "Show"} viewfinder guides
+              {props.overlayVisible ? "Hide" : "Show"} recording-frame guides
             </button>
           </div>
 
+          <p className="note muted">Recording-frame brackets appear when you select Look through camera. They mark the captured image; the external yellow 3D frustum is hidden in that view.</p>
           <p className="note muted">
             Pixel figures are geometry only — an ideal pinhole lens with no
             distortion, haze, motion blur, sensor noise or compression. They
