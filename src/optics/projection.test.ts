@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aimAtTarget,
+  aimedEnuOffset,
   metersPerPixel,
   OUTPUT_RESOLUTIONS,
   outputResolution,
@@ -12,7 +13,11 @@ import {
 } from "./projection";
 import { cameraBasis, type EnuOffset } from "./frustum";
 import { LENS_PRESETS, MAX_TILT_DEG, verticalFovDeg } from "./camera";
-import { inverseGeodesic } from "./geodesy";
+import {
+  DEFAULT_REFRACTION_K,
+  GEOMETRIC_REFRACTION_K,
+  inverseGeodesic,
+} from "./geodesy";
 
 const HD = { widthPixels: 1920, heightPixels: 1080 };
 const UHD = { widthPixels: 3840, heightPixels: 2160 };
@@ -169,6 +174,41 @@ describe("projection", () => {
       expect(p.pixelX).toBeCloseTo(960, 6);
       expect(p.pixelY).toBeCloseTo(540, 6);
     }
+  });
+
+  it("puts a target to the right of the optical axis on the right of the frame", () => {
+    const expected: Record<number, EnuOffset> = {
+      0: { east: 80, north: 1000, up: 0 },
+      90: { east: 1000, north: -80, up: 0 },
+      180: { east: -80, north: -1000, up: 0 },
+      270: { east: -1000, north: 80, up: 0 },
+    };
+    for (const bearing of [0, 90, 180, 270]) {
+      for (const tilt of [0, 6, 35]) {
+        const s = setup({ bearingDeg: bearing, tiltDeg: tilt });
+        const right = projectDirection(s, expected[bearing]);
+        expect(right.behind).toBe(false);
+        expect(right.x).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("puts a target above the optical axis above the centre", () => {
+    for (const bearing of [0, 90, 180, 270]) {
+      for (const tilt of [0, 6, 35]) {
+        const s = setup({ bearingDeg: bearing, tiltDeg: tilt });
+        const above = projectDirection(s, offsetAt(s, 1000, 0, 4));
+        expect(above.y).toBeGreaterThan(0);
+        expect(above.pixelY).toBeLessThan(540);
+      }
+    }
+  });
+
+  it("survives a degenerate field of view instead of dividing by zero", () => {
+    const s = setup({ horizontalFovDeg: 0 });
+    const p = projectDirection(s, { east: 0, north: 1000, up: 0 });
+    expect(p.inFrame).toBe(false);
+    expect(Number.isFinite(p.x)).toBe(true);
   });
 });
 
@@ -336,7 +376,7 @@ describe("aimAtTarget", () => {
     const aim = aimAtTarget(CAMERA, targetOn(0, 2000, 0));
     expect(aim.tiltDeg).toBeGreaterThan(0);
     expect(aim.clamped).toBe(false);
-    // 30.9 m of lens over a sea-level target 2 km out, plus curvature.
+    // 30.9 m of lens over a sea-level target 2 km out, plus geometric curvature.
     expect(aim.tiltDeg).toBeCloseTo(0.89, 1);
   });
 
@@ -376,14 +416,7 @@ describe("aimAtTarget", () => {
     const target = targetOn(47, 2500, 0);
     const aim = aimAtTarget(CAMERA, target);
     const { distanceMeters } = inverseGeodesic(CAMERA.position, target.position);
-    const rad = (aim.bearingDeg * Math.PI) / 180;
-    // Rebuild the target offset the aim was derived from, curvature included.
-    const drop = (distanceMeters * distanceMeters * (1 - 0.13)) / (2 * 6_371_008.8);
-    const offset = {
-      east: distanceMeters * Math.sin(rad),
-      north: distanceMeters * Math.cos(rad),
-      up: target.elevationMeters - drop - CAMERA.elevationMeters,
-    };
+    const offset = aimedEnuOffset(CAMERA, target, distanceMeters);
     const p = projectDirection(
       setup({ bearingDeg: aim.bearingDeg, tiltDeg: aim.tiltDeg }),
       offset,
@@ -391,5 +424,41 @@ describe("aimAtTarget", () => {
     expect(p.angularOffsetDeg).toBeLessThan(0.01);
     expect(p.pixelX).toBeCloseTo(960, 0);
     expect(p.pixelY).toBeCloseTo(540, 0);
+  });
+
+  it("does not mix refraction into the geometric aim used by the viewfinder", () => {
+    const target = targetOn(0, 15_000, 0);
+    const geometric = aimAtTarget(CAMERA, target);
+    const refracted = aimAtTarget(CAMERA, target, {
+      refractionK: DEFAULT_REFRACTION_K,
+    });
+    expect(refracted.tiltDeg).toBeLessThan(geometric.tiltDeg);
+
+    const { distanceMeters } = inverseGeodesic(CAMERA.position, target.position);
+    const chord = aimedEnuOffset(
+      CAMERA,
+      target,
+      distanceMeters,
+      GEOMETRIC_REFRACTION_K,
+    );
+    const centred = projectDirection(
+      setup({
+        bearingDeg: geometric.bearingDeg,
+        tiltDeg: geometric.tiltDeg,
+        horizontalFovDeg: 10,
+      }),
+      chord,
+    );
+    const mixed = projectDirection(
+      setup({
+        bearingDeg: refracted.bearingDeg,
+        tiltDeg: refracted.tiltDeg,
+        horizontalFovDeg: 10,
+      }),
+      chord,
+    );
+    expect(centred.pixelY).toBeCloseTo(540, 0);
+    // Aimed along the refracted path, the rendered chord sits below centre.
+    expect(mixed.pixelY).toBeGreaterThan(centred.pixelY + 1);
   });
 });

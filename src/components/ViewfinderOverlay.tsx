@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { captureFrame } from "../optics/viewfinder";
 import { sensorAspect, type OutputResolution } from "../optics/projection";
 import type { Framing } from "../optics/framing";
@@ -22,10 +22,12 @@ interface Props {
   verticalFovDeg: number;
   /** Absent when no target is placed. */
   framing: Framing | null;
+  /** Cesium globe container; the canvas inside it is the true viewport. */
+  viewportRef?: RefObject<HTMLElement | null>;
 }
 
 export default function ViewfinderOverlay(props: Props) {
-  const aspect = useViewportAspect();
+  const aspect = useViewportAspect(props.viewportRef);
   const frame = captureFrame(aspect, sensorAspect(props.resolution));
 
   const inFrame = props.framing?.image.inFrame === true;
@@ -70,20 +72,39 @@ export default function ViewfinderOverlay(props: Props) {
   );
 }
 
-/** Tracks the window's shape, since the guide is inscribed against it. */
-function useViewportAspect(): number {
-  const [aspect, setAspect] = useState(() => currentAspect());
+/** Tracks the Cesium canvas shape, falling back to the window only if needed. */
+function useViewportAspect(viewportRef?: RefObject<HTMLElement | null>): number {
+  const [aspect, setAspect] = useState(() => measureAspect(viewportRef?.current));
 
   useEffect(() => {
-    const onResize = () => setAspect(currentAspect());
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+    const root = viewportRef?.current ?? null;
+    const update = () => setAspect(measureAspect(root));
+    update();
+
+    const target = viewportElement(root);
+    if (target && typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(update);
+      observer.observe(target);
+      if (root && root !== target) observer.observe(root);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [viewportRef]);
 
   return aspect;
 }
 
-function currentAspect(): number {
+function viewportElement(root: HTMLElement | null | undefined): Element | null {
+  return root?.querySelector("canvas") ?? root ?? null;
+}
+
+export function measureAspect(root: HTMLElement | null | undefined): number {
+  const target = viewportElement(root) as HTMLElement | null;
+  if (target && target.clientHeight > 0 && target.clientWidth > 0) {
+    return target.clientWidth / target.clientHeight;
+  }
   if (typeof window === "undefined" || window.innerHeight === 0) return 16 / 9;
   return window.innerWidth / window.innerHeight;
 }

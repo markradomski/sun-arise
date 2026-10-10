@@ -12,6 +12,11 @@ import { verticalFovDeg } from "./camera";
  *
  * Pure arithmetic: no Cesium here, though `cesiumFrustumFovDeg` exists to feed
  * Cesium's one quirk, documented on that function.
+ *
+ * The viewport aspect must be the Cesium canvas (or its container), not
+ * `window.innerWidth / innerHeight`. A collapsed control panel overlays the
+ * globe and must not reframe the virtual camera; measuring the window would
+ * also drift from the canvas on mobile chrome and docked developer tools.
  */
 
 const DEG = Math.PI / 180;

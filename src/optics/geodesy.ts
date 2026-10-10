@@ -21,13 +21,81 @@ const RAD = 180 / Math.PI;
 /** Mean Earth radius, for curvature corrections where ellipsoidal detail is noise. */
 export const MEAN_EARTH_RADIUS_METERS = 6_371_008.8;
 
+/** First eccentricity squared of WGS84, for geodetic ↔ ECEF conversion. */
+const E2 = F * (2 - F);
+
+/**
+ * Geometric line of sight: a straight chord through ECEF, matching what a
+ * renderer draws. No atmosphere.
+ */
+export const GEOMETRIC_REFRACTION_K = 0;
+
 /**
  * Standard atmospheric refraction coefficient. Light bends towards the Earth,
  * so the apparent horizon is further away than geometry alone gives. 0.13 is
  * the usual survey value for a standard atmosphere; it is configurable because
  * it varies with temperature gradient, and over water it can vary a great deal.
+ *
+ * This coefficient belongs to terrain visibility analysis. It is not applied
+ * when projecting a target into the virtual camera, because the rendered
+ * scene is a straight geometric chord.
  */
 export const DEFAULT_REFRACTION_K = 0.13;
+
+export interface EcefPoint {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface GeodeticPoint extends LatLng {
+  heightMeters: number;
+}
+
+/** WGS84 geodetic to Earth-centred Earth-fixed metres. */
+export function geodeticToEcef(point: GeodeticPoint): EcefPoint {
+  const lat = point.latitude * DEG;
+  const lon = point.longitude * DEG;
+  const sinLat = Math.sin(lat);
+  const cosLat = Math.cos(lat);
+  const sinLon = Math.sin(lon);
+  const cosLon = Math.cos(lon);
+  const n = A / Math.sqrt(1 - E2 * sinLat * sinLat);
+  return {
+    x: (n + point.heightMeters) * cosLat * cosLon,
+    y: (n + point.heightMeters) * cosLat * sinLon,
+    z: (n * (1 - E2) + point.heightMeters) * sinLat,
+  };
+}
+
+/**
+ * Straight-line offset from `from` to `to` in the local east-north-up frame
+ * at `from`. This is the geometric vector a pinhole camera at `from` sees,
+ * and the same convention Cesium uses for ENU placement.
+ */
+export function geodeticEnuOffset(
+  from: GeodeticPoint,
+  to: GeodeticPoint,
+): { east: number; north: number; up: number } {
+  const origin = geodeticToEcef(from);
+  const point = geodeticToEcef(to);
+  const dx = point.x - origin.x;
+  const dy = point.y - origin.y;
+  const dz = point.z - origin.z;
+
+  const lat = from.latitude * DEG;
+  const lon = from.longitude * DEG;
+  const sinLat = Math.sin(lat);
+  const cosLat = Math.cos(lat);
+  const sinLon = Math.sin(lon);
+  const cosLon = Math.cos(lon);
+
+  return {
+    east: -sinLon * dx + cosLon * dy,
+    north: -sinLat * cosLon * dx - sinLat * sinLon * dy + cosLat * dz,
+    up: cosLat * cosLon * dx + cosLat * sinLon * dy + sinLat * dz,
+  };
+}
 
 export interface GeodesicResult {
   distanceMeters: number;

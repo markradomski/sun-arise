@@ -6,7 +6,8 @@ import {
 } from "./camera";
 import {
   curvatureDropMeters,
-  DEFAULT_REFRACTION_K,
+  GEOMETRIC_REFRACTION_K,
+  geodeticEnuOffset,
   inverseGeodesic,
 } from "./geodesy";
 import type { EnuOffset } from "./frustum";
@@ -54,32 +55,41 @@ export interface ReferenceObject {
 /**
  * Offset from the lens to the target, in local east-north-up metres.
  *
- * The vertical carries the same curvature and refraction correction the
- * terrain sight line uses, so the camera is aimed along the path light
- * actually takes rather than along a straight line through the Earth.
+ * Default is the **geometric** ECEF chord — the same straight line the
+ * renderer draws — so the viewfinder marker lands on the rendered target.
+ * Terrain line-of-sight analysis applies curvature and refraction separately
+ * (`DEFAULT_REFRACTION_K` in `sightLine`); do not feed that coefficient in
+ * here unless you are deliberately comparing the two models.
  */
 export function targetOffset(
   camera: InstallationCamera,
   target: { ground: GeoPosition; heightMeters: number },
-  refractionK = DEFAULT_REFRACTION_K,
+  refractionK = GEOMETRIC_REFRACTION_K,
 ): { offset: EnuOffset; distanceMeters: number; bearingDeg: number } {
   const { distanceMeters, initialBearingDeg } = inverseGeodesic(
     camera.ground,
     target.ground,
   );
-  const rad = (initialBearingDeg * Math.PI) / 180;
-  const rise =
-    target.ground.height +
-    target.heightMeters -
-    curvatureDropMeters(distanceMeters, refractionK) -
-    cameraElevationMeters(camera);
+  const offset = geodeticEnuOffset(
+    {
+      latitude: camera.ground.latitude,
+      longitude: camera.ground.longitude,
+      heightMeters: cameraElevationMeters(camera),
+    },
+    {
+      latitude: target.ground.latitude,
+      longitude: target.ground.longitude,
+      heightMeters: target.ground.height + target.heightMeters,
+    },
+  );
+  if (refractionK !== GEOMETRIC_REFRACTION_K) {
+    offset.up +=
+      curvatureDropMeters(distanceMeters, GEOMETRIC_REFRACTION_K) -
+      curvatureDropMeters(distanceMeters, refractionK);
+  }
 
   return {
-    offset: {
-      east: distanceMeters * Math.sin(rad),
-      north: distanceMeters * Math.cos(rad),
-      up: rise,
-    },
+    offset,
     distanceMeters,
     bearingDeg: initialBearingDeg,
   };

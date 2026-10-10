@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   curvatureDropMeters,
+  geodeticEnuOffset,
+  geodeticToEcef,
   horizonDistanceMeters,
   inverseGeodesic,
   normaliseBearing,
   DEFAULT_REFRACTION_K,
+  directGeodesic,
 } from "./geodesy";
 import { offsetByBearing, eastNorthOffset } from "../scene/geo";
 
@@ -121,5 +124,45 @@ describe("horizonDistanceMeters", () => {
     expect(horizonDistanceMeters(10, 0.13)).toBeGreaterThan(
       horizonDistanceMeters(10, 0),
     );
+  });
+});
+
+describe("geodeticEnuOffset", () => {
+  it("is zero for coincident points", () => {
+    const point = { ...LULWORTH, heightMeters: 12 };
+    const offset = geodeticEnuOffset(point, point);
+    expect(offset.east).toBeCloseTo(0, 9);
+    expect(offset.north).toBeCloseTo(0, 9);
+    expect(offset.up).toBeCloseTo(0, 9);
+  });
+
+  it("points east and north with the expected signs from Lulworth", () => {
+    const from = { ...LULWORTH, heightMeters: 30 };
+    const north = {
+      ...directGeodesic(LULWORTH, 0, 2_000).position,
+      heightMeters: 30,
+    };
+    const east = {
+      ...directGeodesic(LULWORTH, 90, 2_000).position,
+      heightMeters: 30,
+    };
+    const toNorth = geodeticEnuOffset(from, north);
+    const toEast = geodeticEnuOffset(from, east);
+    expect(toNorth.north).toBeGreaterThan(1_990);
+    expect(Math.abs(toNorth.east)).toBeLessThan(2);
+    expect(toNorth.up).toBeLessThan(0);
+    expect(toEast.east).toBeGreaterThan(1_990);
+    expect(Math.abs(toEast.north)).toBeLessThan(2);
+  });
+
+  it("carries a height difference in up", () => {
+    const from = { ...LULWORTH, heightMeters: 10 };
+    const to = { ...LULWORTH, heightMeters: 40 };
+    expect(geodeticEnuOffset(from, to).up).toBeCloseTo(30, 6);
+  });
+
+  it("round-trips ECEF far enough from the origin to be on the ellipsoid", () => {
+    const ecef = geodeticToEcef({ ...LULWORTH, heightMeters: 0 });
+    expect(Math.hypot(ecef.x, ecef.y, ecef.z)).toBeGreaterThan(6_300_000);
   });
 });

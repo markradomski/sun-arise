@@ -153,10 +153,12 @@ export default function SurfCamPanel(props: Props) {
         )}
 
         <p className="note muted">
-          {configuration?.purpose} A configuration only sets a starting field
-          of view — aim, height and framing all stay adjustable, including on
-          the fixed types, so the site can be planned before anything is
-          chosen.
+          {configuration?.purpose}{" "}
+          {configuration?.kind === "FIXED"
+            ? "Field-of-view changes on a fixed camera are planning comparisons, not optical zoom available after installation."
+            : "A PTZ configuration can be zoomed in this tool within a typical range; that is still a planning exploration, not a product specification."}{" "}
+          Aim, height and framing stay adjustable so the site can be planned
+          before anything is chosen.
         </p>
 
         <div className="button-row">
@@ -334,10 +336,11 @@ export default function SurfCamPanel(props: Props) {
             </div>
           </dl>
           <p className="note muted">
-            Framing options, not optical zoom: there is no focal length or
-            sensor size here, only the angle the camera would cover. Horizon
-            distance assumes an unobstructed sea surface and standard
-            refraction, and is not a visibility result.
+            Framing options, not a lens you can zoom after fitting a fixed
+            camera: there is no focal length or sensor size here, only the
+            angle the camera would cover. Horizon distance assumes an
+            unobstructed sea surface and standard refraction, and is not a
+            visibility result.
           </p>
         </Section>
       )}
@@ -758,7 +761,7 @@ function LensComparison(props: {
               <td>
                 {row.horizontalFovDeg}°×{row.verticalFovDeg.toFixed(0)}°
               </td>
-              <td>{formatWide(row.frameWidthMeters)}</td>
+              <td>{formatFrameWidth(row.frameWidthMeters)}</td>
               <td>{row.inFrame ? `${formatPixels(row.objectWidthPixels)} px` : "—"}</td>
               <td>{formatMetres(row.metersPerPixel)}</td>
             </tr>
@@ -783,6 +786,12 @@ function formatPixels(value: number): string {
 function formatMetres(value: number): string {
   if (value >= 1) return `${value.toFixed(2)} m`;
   return `${(value * 100).toFixed(1)} cm`;
+}
+
+function formatFrameWidth(value: number): string {
+  if (value >= 1000) return `${(value / 1000).toFixed(2)} km`;
+  if (value >= 100) return `${Math.round(value)} m`;
+  return `${value.toFixed(0)} m`;
 }
 
 function SightLineReadout({ state }: { state: SightLineState }) {

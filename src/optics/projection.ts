@@ -1,8 +1,9 @@
-import { cameraBasis, dot, type EnuOffset } from "./frustum";
+import { bearingOf, cameraBasis, dot, tiltOf, type EnuOffset } from "./frustum";
 import { clamp, MAX_TILT_DEG, MIN_TILT_DEG, verticalFovDeg } from "./camera";
 import {
   curvatureDropMeters,
-  DEFAULT_REFRACTION_K,
+  GEOMETRIC_REFRACTION_K,
+  geodeticEnuOffset,
   inverseGeodesic,
 } from "./geodesy";
 import type { LatLng } from "../scene/geo";
@@ -155,6 +156,18 @@ export function projectDirection(
     };
   }
 
+  if (!(halfWidth > 0) || !(halfHeight > 0)) {
+    return {
+      inFrame: false,
+      behind: false,
+      x: 0,
+      y: 0,
+      pixelX: 0,
+      pixelY: 0,
+      angularOffsetDeg,
+    };
+  }
+
   const x = right / forward / halfWidth;
   const y = up / forward / halfHeight;
 
@@ -226,8 +239,9 @@ export function projectObjectSize(
  */
 export function metersPerPixel(setup: ImagingSetup, distanceMeters: number): number {
   if (distanceMeters <= 0) return 0;
-  const focalPixels =
-    setup.format.widthPixels / 2 / Math.tan((setup.horizontalFovDeg / 2) * DEG);
+  const halfWidth = Math.tan((setup.horizontalFovDeg / 2) * DEG);
+  if (!(halfWidth > 0) || !(setup.format.widthPixels > 0)) return 0;
+  const focalPixels = setup.format.widthPixels / 2 / halfWidth;
   return distanceMeters / focalPixels;
 }
 
@@ -242,7 +256,9 @@ export function frameWidthMeters(
   distanceMeters: number,
 ): number {
   if (distanceMeters <= 0) return 0;
-  return 2 * distanceMeters * Math.tan((horizontalFovDeg / 2) * DEG);
+  const halfWidth = Math.tan((horizontalFovDeg / 2) * DEG);
+  if (!(halfWidth > 0)) return 0;
+  return 2 * distanceMeters * halfWidth;
 }
 
 export interface AimAtTarget {
@@ -263,41 +279,32 @@ export interface AimEndpoint {
 /**
  * Where to point the camera to put a target on the optical axis.
  *
- * The elevation angle carries the same curvature and refraction correction as
- * the terrain sight line, because both answer the same physical question:
- * light from the target arrives along the refracted path, so that is the
- * direction the lens must face. The two differ only in what they are for —
- * this aims the camera, the sight line decides whether the ground is in the
- * way — and both are geometry over a bare-earth model, not a promise of a view.
+ * Default aim is **geometric**: the straight ECEF chord the renderer draws.
+ * Atmospheric refraction is a separate model used by terrain line-of-sight
+ * analysis. Passing `refractionK` here is only for comparing those models; the
+ * viewfinder and look-through camera always aim with the geometric default so
+ * the marker and the rendered target agree.
  */
 export function aimAtTarget(
   camera: AimEndpoint,
   target: AimEndpoint,
   options: { refractionK?: number; currentBearingDeg?: number } = {},
 ): AimAtTarget {
-  const refractionK = options.refractionK ?? DEFAULT_REFRACTION_K;
+  const refractionK = options.refractionK ?? GEOMETRIC_REFRACTION_K;
   const { distanceMeters, initialBearingDeg } = inverseGeodesic(
     camera.position,
     target.position,
   );
 
-  const rise =
-    target.elevationMeters -
-    curvatureDropMeters(distanceMeters, refractionK) -
-    camera.elevationMeters;
+  const offset = aimedEnuOffset(camera, target, distanceMeters, refractionK);
+  const horizontal = Math.hypot(offset.east, offset.north);
 
   // Directly above or below: the bearing is undefined, so the camera keeps
   // the one it has and only the tilt moves.
   const bearingDeg =
-    distanceMeters > 0 ? initialBearingDeg : (options.currentBearingDeg ?? 0);
+    horizontal > 0 ? bearingOf(offset) : (options.currentBearingDeg ?? initialBearingDeg);
 
-  const requestedTiltDeg =
-    distanceMeters > 0
-      ? Math.atan2(-rise, distanceMeters) / DEG
-      : rise < 0
-        ? MAX_TILT_DEG
-        : MIN_TILT_DEG;
-
+  const requestedTiltDeg = tiltOf(offset);
   const tiltDeg = clamp(requestedTiltDeg, MIN_TILT_DEG, MAX_TILT_DEG);
 
   return {
@@ -306,6 +313,26 @@ export function aimAtTarget(
     requestedTiltDeg,
     clamped: Math.abs(tiltDeg - requestedTiltDeg) > 1e-9,
   };
+}
+
+/** Geometric ENU to a target, with an optional apparent-refraction lift. */
+export function aimedEnuOffset(
+  camera: AimEndpoint,
+  target: AimEndpoint,
+  distanceMeters: number,
+  refractionK = GEOMETRIC_REFRACTION_K,
+): EnuOffset {
+  const offset = geodeticEnuOffset(
+    { ...camera.position, heightMeters: camera.elevationMeters },
+    { ...target.position, heightMeters: target.elevationMeters },
+  );
+  if (refractionK === GEOMETRIC_REFRACTION_K) return offset;
+  // Light arriving along a refracted path appears higher than the chord.
+  // Applied only when an analysis explicitly asks for that model.
+  offset.up +=
+    curvatureDropMeters(distanceMeters, GEOMETRIC_REFRACTION_K) -
+    curvatureDropMeters(distanceMeters, refractionK);
+  return offset;
 }
 
 function clampUnit(value: number): number {

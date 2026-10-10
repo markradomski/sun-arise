@@ -379,22 +379,24 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   },
 
   saveMount(name) {
-    const state = useSolarHouseStore.getState();
-    const camera = state.surfCam;
-    if (!camera) return null;
+    let id: string | null = null;
+    set((state) => {
+      const camera = state.surfCam;
+      if (!camera) return state;
 
-    const id = `mount-${state.savedMounts.length + 1}-${Date.now().toString(36)}`;
-    const mount: SavedMount = {
-      id,
-      name: name.trim() || `Mount ${state.savedMounts.length + 1}`,
-      ground: { ...camera.ground },
-      mountHeightMeters: camera.mountHeightMeters,
-      bearingDeg: camera.bearingDeg,
-      tiltDeg: camera.tiltDeg,
-      horizontalFovDeg: camera.horizontalFovDeg,
-      configurationId: state.cameraConfigurationId,
-    };
-    set({ savedMounts: [...state.savedMounts, mount] });
+      id = `mount-${state.savedMounts.length + 1}-${Date.now().toString(36)}`;
+      const mount: SavedMount = {
+        id,
+        name: name.trim() || `Mount ${state.savedMounts.length + 1}`,
+        ground: { ...camera.ground },
+        mountHeightMeters: camera.mountHeightMeters,
+        bearingDeg: camera.bearingDeg,
+        tiltDeg: camera.tiltDeg,
+        horizontalFovDeg: camera.horizontalFovDeg,
+        configurationId: state.cameraConfigurationId,
+      };
+      return { savedMounts: [...state.savedMounts, mount] };
+    });
     return id;
   },
 

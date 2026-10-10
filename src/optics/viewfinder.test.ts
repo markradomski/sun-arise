@@ -32,6 +32,24 @@ describe("captureFrame", () => {
     expect(frame.heightFraction).toBeLessThan(0.3);
   });
 
+  it("fills a 1920×1080 desktop that already matches 16:9", () => {
+    const frame = captureFrame(1920 / 1080, SENSOR);
+    expect(frame.widthFraction).toBeCloseTo(1, 9);
+    expect(frame.heightFraction).toBeCloseTo(1, 9);
+  });
+
+  it("letterboxes 16:9 inside a 1440×900 desktop", () => {
+    const frame = captureFrame(1440 / 900, SENSOR);
+    expect(frame.widthFraction).toBeCloseTo(1, 9);
+    expect(frame.heightFraction).toBeCloseTo(1440 / 900 / SENSOR, 9);
+  });
+
+  it("pillarboxes 16:9 inside landscape mobile", () => {
+    const frame = captureFrame(812 / 375, SENSOR);
+    expect(frame.heightFraction).toBeCloseTo(1, 9);
+    expect(frame.widthFraction).toBeCloseTo(SENSOR / (812 / 375), 9);
+  });
+
   it("refuses to divide by a collapsed viewport", () => {
     expect(captureFrame(0, SENSOR)).toEqual({ widthFraction: 1, heightFraction: 1 });
     expect(captureFrame(SENSOR, 0)).toEqual({ widthFraction: 1, heightFraction: 1 });
