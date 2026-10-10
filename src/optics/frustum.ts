@@ -55,6 +55,32 @@ function rightVector(bearingDeg: number): EnuOffset {
   return { east: Math.cos(bearing), north: -Math.sin(bearing), up: 0 };
 }
 
+export interface CameraBasis {
+  /** Unit vector down the view axis. */
+  forward: EnuOffset;
+  /** Unit vector to the camera's right, horizontal. */
+  right: EnuOffset;
+  /** Unit vector out of the top of the frame; tilts with the camera. */
+  up: EnuOffset;
+}
+
+/**
+ * The camera's own axes in east-north-up.
+ *
+ * The single source of pointing for everything downstream: the drawn
+ * frustum, the image projection and the viewfinder all read this, so they
+ * cannot disagree about where the camera looks.
+ */
+export function cameraBasis(bearingDeg: number, tiltDeg: number): CameraBasis {
+  const forward = orientationVector(bearingDeg, tiltDeg);
+  const right = rightVector(bearingDeg);
+  return { forward, right, up: cross(right, forward) };
+}
+
+export function dot(a: EnuOffset, b: EnuOffset): number {
+  return a.east * b.east + a.north * b.north + a.up * b.up;
+}
+
 function cross(a: EnuOffset, b: EnuOffset): EnuOffset {
   return {
     east: a.north * b.up - a.up * b.north,
@@ -86,11 +112,7 @@ export function frustumGeometry(
   aim: FrustumAim,
   rangeMeters: number,
 ): FrustumGeometry {
-  const axis = orientationVector(aim.bearingDeg, aim.tiltDeg);
-  const right = rightVector(aim.bearingDeg);
-  // Completes a right-handed set, so it tilts with the camera rather than
-  // staying vertical.
-  const up = cross(right, axis);
+  const { forward: axis, right, up } = cameraBasis(aim.bearingDeg, aim.tiltDeg);
 
   const spreadRight = Math.tan((aim.horizontalFovDeg / 2) * DEG) * rangeMeters;
   const spreadUp = Math.tan((aim.verticalFovDeg / 2) * DEG) * rangeMeters;

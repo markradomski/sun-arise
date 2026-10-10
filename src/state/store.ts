@@ -15,6 +15,10 @@ import type { BoxOccluder } from "../solar/exposure";
 import type { InstallationCamera } from "../optics/camera";
 import { constrainCamera } from "../optics/camera";
 import { catalogEntry, DEFAULT_HOUSE_SLUG } from "../houses/catalog";
+import {
+  DEFAULT_RESOLUTION_ID,
+  DEFAULT_TARGET_SIZE_ID,
+} from "../optics/projection";
 
 export interface SolarHouseState {
   objects: Record<string, SceneObject>;
@@ -54,6 +58,8 @@ export interface SolarHouseState {
   surfTarget: SightTarget | null;
   /** The next ground click places the sight-line target. */
   surfTargetArmed: boolean;
+  /** Output format and reference object the framing estimates are made against. */
+  capture: CaptureSettings;
   /** Set while the navigation camera is borrowed to look through the mount. */
   lookingThrough: boolean;
 
@@ -80,8 +86,24 @@ export interface SolarHouseState {
   setSurfTarget(target: SightTarget | null): void;
   updateSurfTarget(patch: Partial<SightTarget>): void;
   armSurfTarget(armed: boolean): void;
+  setCapture(patch: Partial<CaptureSettings>): void;
   setLookingThrough(looking: boolean): void;
 }
+
+/**
+ * Planning inputs for the framing estimates. Not optics and not scene: they
+ * say what camera is being imagined and what is being measured against it.
+ */
+export interface CaptureSettings {
+  /** Id from `OUTPUT_RESOLUTIONS`. */
+  resolutionId: string;
+  /** Id from `TARGET_SIZES`, or `CUSTOM_TARGET_SIZE_ID`. */
+  targetSizeId: string;
+  customWidthMeters: number;
+  customHeightMeters: number;
+}
+
+export const CUSTOM_TARGET_SIZE_ID = "custom";
 
 /** Solar analysis and Surf Cam are separate workflows over one scene. */
 export type AppMode = "SOLAR" | "SURF_CAM";
@@ -123,6 +145,12 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   surfCamArmed: false,
   surfTarget: null,
   surfTargetArmed: false,
+  capture: {
+    resolutionId: DEFAULT_RESOLUTION_ID,
+    targetSizeId: DEFAULT_TARGET_SIZE_ID,
+    customWidthMeters: 2,
+    customHeightMeters: 2,
+  },
   lookingThrough: false,
 
   addObject(object) {
@@ -279,6 +307,25 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
 
   armSurfTarget(armed) {
     set(armed ? { surfTargetArmed: true, surfCamArmed: false } : { surfTargetArmed: false });
+  },
+
+  setCapture(patch) {
+    set((state) => ({
+      capture: {
+        ...state.capture,
+        ...patch,
+        // A reference object with no size would divide the framing estimates
+        // by zero and report an infinitely small footprint.
+        customWidthMeters: Math.max(
+          0.1,
+          patch.customWidthMeters ?? state.capture.customWidthMeters,
+        ),
+        customHeightMeters: Math.max(
+          0.1,
+          patch.customHeightMeters ?? state.capture.customHeightMeters,
+        ),
+      },
+    }));
   },
 
   setLookingThrough(looking) {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Cartesian3, Math as CesiumMath } from "cesium";
+import { Cartesian3, Math as CesiumMath, PerspectiveFrustum } from "cesium";
 import {
   CameraController,
   DEFAULT_CAMERA_MODE,
@@ -57,6 +57,15 @@ import { HeatmapOverlay } from "./cesium/HeatmapOverlay";
 import { occluderFor } from "./scene/occluders";
 import { terrainPolicyFor, type GeoPosition } from "./scene/types";
 import { STARTUP_SITE } from "./scene/startupSite";
+import { cesiumFrustumFovDeg } from "./optics/viewfinder";
+import {
+  aimAtTarget,
+  outputResolution,
+  sensorAspect,
+  targetSize,
+} from "./optics/projection";
+import { compareLenses, frameTarget } from "./optics/framing";
+import ViewfinderOverlay from "./components/ViewfinderOverlay";
 import {
   selectOrderedObjects,
   selectSelectedObject,
@@ -74,6 +83,9 @@ const INSTANT_INTERVAL_MS = 180;
 const INITIAL_DATE = new Date();
 
 const INITIAL_SITE = STARTUP_SITE.position;
+
+/** Cesium's own default, restored when the planned lens is handed back. */
+const DEFAULT_NAVIGATION_FOV_RADIANS = CesiumMath.toRadians(60);
 
 function geocodeMessage(status: string, query: string): string {
   switch (status) {
@@ -132,6 +144,29 @@ export default function App() {
   const surfCamArmed = useSolarHouseStore((s) => s.surfCamArmed);
   const surfTarget = useSolarHouseStore((s) => s.surfTarget);
   const surfTargetArmed = useSolarHouseStore((s) => s.surfTargetArmed);
+  const capture = useSolarHouseStore((s) => s.capture);
+  const [overlayVisible, setOverlayVisible] = useState(true);
+
+  /** The reference object the pixel estimates are measured against. */
+  const referenceObject = (() => {
+    const preset = targetSize(capture.targetSizeId);
+    return preset
+      ? { widthMeters: preset.widthMeters, heightMeters: preset.heightMeters }
+      : {
+          widthMeters: capture.customWidthMeters,
+          heightMeters: capture.customHeightMeters,
+        };
+  })();
+
+  /**
+   * One framing result for the panel, the comparison table and the overlay.
+   * Cheap arithmetic over a handful of vectors, so it is recomputed with the
+   * render rather than cached behind a signature.
+   */
+  const framing =
+    surfCam && surfTarget
+      ? frameTarget(surfCam, surfTarget, capture.resolutionId, referenceObject)
+      : null;
   const lookingThrough = useSolarHouseStore((s) => s.lookingThrough);
   const terrainStatus = useSolarHouseStore((s) => s.terrainStatus);
   const [sightLine, setSightLine] = useState<SightLineState>({ status: "IDLE" });
@@ -717,8 +752,27 @@ export default function App() {
   }, [field, instant, fieldMode, fieldEnabled]);
 
   useEffect(() => {
-    frustumRef.current?.update(appMode === "SURF_CAM" ? surfCam : null);
-  }, [appMode, surfCam]);
+    // The frustum is the shape of the view seen from outside. Drawing it over
+    // the view itself would put the camera's own edges across its picture.
+    const show = appMode === "SURF_CAM" && !lookingThrough;
+    frustumRef.current?.update(show ? surfCam : null);
+  }, [appMode, surfCam, lookingThrough]);
+
+  /**
+   * Keeps the preview's projection matched to the lens.
+   *
+   * Changing the field of view, the output format or the window's shape all
+   * change what the capture frame must cover, and a projection left stale
+   * would report a framing the preview is not actually showing.
+   */
+  useEffect(() => {
+    if (!lookingThrough) return;
+    applyLensToViewfinder();
+
+    const onResize = () => applyLensToViewfinder();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [lookingThrough, surfCam?.horizontalFovDeg, capture.resolutionId]);
 
   /**
    * What the sight line actually depends on: the two physical endpoints.
@@ -999,7 +1053,68 @@ export default function App() {
         roll: 0,
       },
     });
+    applyLensToViewfinder();
     useSolarHouseStore.getState().setLookingThrough(true);
+  };
+
+  /**
+   * Narrows the navigation camera's frustum to the lens being planned.
+   *
+   * Without this the preview is whatever Cesium defaults to and the lens
+   * controls do nothing to it. The capture frame is inscribed in the canvas
+   * rather than stretched to it, so the angle handed to Cesium covers the
+   * canvas and the overlay's guide marks the part the camera would record.
+   */
+  const applyLensToViewfinder = () => {
+    const scene = sceneRef.current;
+    const camera = useSolarHouseStore.getState().surfCam;
+    if (!scene || !camera) return;
+
+    const frustum = scene.viewer.camera.frustum;
+    if (!(frustum instanceof PerspectiveFrustum)) return;
+
+    const canvas = scene.viewer.scene.canvas;
+    if (!canvas.clientWidth || !canvas.clientHeight) return;
+
+    const format = outputResolution(
+      useSolarHouseStore.getState().capture.resolutionId,
+    );
+    frustum.fov = CesiumMath.toRadians(
+      cesiumFrustumFovDeg(
+        camera.horizontalFovDeg,
+        sensorAspect(format),
+        canvas.clientWidth / canvas.clientHeight,
+      ),
+    );
+  };
+
+  /**
+   * Points the camera at the placed target, explicitly and once.
+   *
+   * Aiming is never automatic: moving a target to compare two spots must not
+   * swing the mount the user has been setting up. Position, mount height and
+   * lens are all left alone — only the aim changes.
+   */
+  const handleAimAtTarget = () => {
+    const store = useSolarHouseStore.getState();
+    const camera = store.surfCam;
+    const target = store.surfTarget;
+    if (!camera || !target) return;
+
+    const aim = aimAtTarget(
+      {
+        position: camera.ground,
+        elevationMeters: cameraElevationMeters(camera),
+      },
+      {
+        position: target.ground,
+        elevationMeters: target.ground.height + target.heightMeters,
+      },
+      { currentBearingDeg: camera.bearingDeg },
+    );
+
+    store.updateSurfCam({ bearingDeg: aim.bearingDeg, tiltDeg: aim.tiltDeg });
+    if (useSolarHouseStore.getState().lookingThrough) handleLookThrough();
   };
 
   const handleReturnView = () => {
@@ -1007,6 +1122,12 @@ export default function App() {
     const scene = sceneRef.current;
     if (scene) {
       scene.viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
+      const frustum = scene.viewer.camera.frustum;
+      // Hand the navigation camera its own field of view back, or every
+      // later orbit is stuck behind the planned lens.
+      if (frustum instanceof PerspectiveFrustum) {
+        frustum.fov = DEFAULT_NAVIGATION_FOV_RADIANS;
+      }
     }
     const camera = useSolarHouseStore.getState().surfCam;
     cameraRef.current?.flyTo("SITE", camera ? camera.ground : INITIAL_SITE);
@@ -1083,6 +1204,16 @@ export default function App() {
     <main className="app">
       <div ref={containerRef} className="globe" />
       <div className="vignette" />
+      {lookingThrough && overlayVisible && surfCam && (
+        <ViewfinderOverlay
+          resolution={outputResolution(capture.resolutionId)}
+          bearingDeg={surfCam.bearingDeg}
+          tiltDeg={surfCam.tiltDeg}
+          horizontalFovDeg={surfCam.horizontalFovDeg}
+          verticalFovDeg={framing?.verticalFovDeg ?? surfCam.horizontalFovDeg}
+          framing={framing}
+        />
+      )}
       <Controls
         siteName={STARTUP_SITE.name}
         appMode={appMode}
@@ -1213,6 +1344,22 @@ export default function App() {
               store.setSurfTarget(null);
               store.armSurfTarget(false);
             }}
+            framing={framing}
+            comparison={
+              surfCam && surfTarget
+                ? compareLenses(
+                    surfCam,
+                    surfTarget,
+                    capture.resolutionId,
+                    referenceObject,
+                  )
+                : []
+            }
+            capture={capture}
+            overlayVisible={overlayVisible}
+            onCapture={(patch) => useSolarHouseStore.getState().setCapture(patch)}
+            onAimAtTarget={handleAimAtTarget}
+            onOverlayVisible={setOverlayVisible}
           />
         )}
       </Controls>

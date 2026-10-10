@@ -28,8 +28,26 @@ import {
   type SightTarget,
 } from "../state/store";
 import TerrainProfileChart from "./TerrainProfileChart";
+import {
+  OUTPUT_RESOLUTIONS,
+  TARGET_SIZES,
+  outputResolution,
+} from "../optics/projection";
+import type { Framing, LensComparisonRow } from "../optics/framing";
+import { CUSTOM_TARGET_SIZE_ID, type CaptureSettings } from "../state/store";
 
-interface Props {
+interface FramingProps {
+  /** Null until a target is placed. */
+  framing: Framing | null;
+  comparison: LensComparisonRow[];
+  capture: CaptureSettings;
+  overlayVisible: boolean;
+  onCapture: (patch: Partial<CaptureSettings>) => void;
+  onAimAtTarget: () => void;
+  onOverlayVisible: (visible: boolean) => void;
+}
+
+interface Props extends FramingProps {
   camera: InstallationCamera | null;
   armed: boolean;
   lookingThrough: boolean;
@@ -57,6 +75,10 @@ export default function SurfCamPanel(props: Props) {
     tilt: useId(),
     fov: useId(),
     targetHeight: useId(),
+    resolution: useId(),
+    targetSize: useId(),
+    customWidth: useId(),
+    customHeight: useId(),
   };
 
   return (
@@ -196,8 +218,15 @@ export default function SurfCamPanel(props: Props) {
 
           <dl className="readout-grid">
             <div>
-              <dt>Vertical FOV</dt>
-              <dd>{verticalFovDeg(camera.horizontalFovDeg).toFixed(1)}° at 16:9</dd>
+              <dt>Field of view</dt>
+              <dd>
+                {camera.horizontalFovDeg.toFixed(0)}° ×{" "}
+                {verticalFovDeg(camera.horizontalFovDeg).toFixed(0)}°
+              </dd>
+            </div>
+            <div>
+              <dt>Nearest preset</dt>
+              <dd>{nearestLensPreset(camera.horizontalFovDeg).label}</dd>
             </div>
             <div>
               <dt>Sea horizon</dt>
@@ -210,9 +239,125 @@ export default function SurfCamPanel(props: Props) {
             </div>
           </dl>
           <p className="note muted">
-            Horizon distance assumes an unobstructed sea surface and standard
-            refraction. It is not a visibility result: no terrain, vegetation or
-            buildings have been tested.
+            Framing options, not optical zoom: there is no focal length or
+            sensor size here, only the angle the camera would cover. Horizon
+            distance assumes an unobstructed sea surface and standard
+            refraction, and is not a visibility result.
+          </p>
+        </Section>
+      )}
+
+      {camera && (
+        <Section title="Framing">
+          <label className="field-label" htmlFor={ids.resolution}>
+            Output resolution
+          </label>
+          <div className="button-row" role="group" aria-label="Output resolution">
+            {OUTPUT_RESOLUTIONS.map((resolution) => (
+              <button
+                key={resolution.id}
+                className={
+                  props.capture.resolutionId === resolution.id ? "active" : ""
+                }
+                aria-pressed={props.capture.resolutionId === resolution.id}
+                onClick={() => props.onCapture({ resolutionId: resolution.id })}
+              >
+                {resolution.label}
+              </button>
+            ))}
+          </div>
+
+          {!props.framing && (
+            <p className="note">
+              Place a target to estimate how large something at that distance
+              would appear.
+            </p>
+          )}
+
+          {props.framing && (
+            <>
+              <div className="button-row">
+                <button onClick={props.onAimAtTarget}>Aim at target</button>
+              </div>
+
+              <label className="field-label" htmlFor={ids.targetSize}>
+                Reference object
+              </label>
+              <select
+                id={ids.targetSize}
+                value={props.capture.targetSizeId}
+                onChange={(event) =>
+                  props.onCapture({ targetSizeId: event.target.value })
+                }
+              >
+                {TARGET_SIZES.map((size) => (
+                  <option key={size.id} value={size.id}>
+                    {size.label}
+                  </option>
+                ))}
+                <option value={CUSTOM_TARGET_SIZE_ID}>Custom…</option>
+              </select>
+
+              {props.capture.targetSizeId === CUSTOM_TARGET_SIZE_ID && (
+                <div className="custom-size">
+                  <label className="field-label" htmlFor={ids.customWidth}>
+                    Width m
+                  </label>
+                  <input
+                    id={ids.customWidth}
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    value={props.capture.customWidthMeters}
+                    onChange={(event) =>
+                      props.onCapture({
+                        customWidthMeters: Number(event.target.value),
+                      })
+                    }
+                  />
+                  <label className="field-label" htmlFor={ids.customHeight}>
+                    Height m
+                  </label>
+                  <input
+                    id={ids.customHeight}
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    value={props.capture.customHeightMeters}
+                    onChange={(event) =>
+                      props.onCapture({
+                        customHeightMeters: Number(event.target.value),
+                      })
+                    }
+                  />
+                </div>
+              )}
+
+              <FramingReadout framing={props.framing} />
+
+              <LensComparison
+                rows={props.comparison}
+                resolutionLabel={outputResolution(props.capture.resolutionId).label}
+              />
+            </>
+          )}
+
+          <div className="button-row">
+            <button
+              className={props.overlayVisible ? "active" : "secondary"}
+              aria-pressed={props.overlayVisible}
+              onClick={() => props.onOverlayVisible(!props.overlayVisible)}
+            >
+              {props.overlayVisible ? "Hide" : "Show"} viewfinder guides
+            </button>
+          </div>
+
+          <p className="note muted">
+            Pixel figures are geometry only — an ideal pinhole lens with no
+            distortion, haze, motion blur, sensor noise or compression. They
+            say how much of the sensor something covers, not whether it would
+            be recognisable. The satellite imagery in the preview is not video
+            and shows nothing about a real camera's sharpness.
           </p>
         </Section>
       )}
@@ -316,6 +461,104 @@ export default function SurfCamPanel(props: Props) {
       )}
     </>
   );
+}
+
+function FramingReadout({ framing }: { framing: Framing }) {
+  const { image, size } = framing;
+
+  return (
+    <>
+      <dl className="readout-grid">
+        <div>
+          <dt>Off axis</dt>
+          <dd>{framing.angularOffsetDeg.toFixed(1)}°</dd>
+        </div>
+        <div>
+          <dt>In frame</dt>
+          <dd>{image.inFrame ? "Yes" : image.behind ? "Behind camera" : "No"}</dd>
+        </div>
+        {image.inFrame && (
+          <div>
+            <dt>Image position</dt>
+            <dd>
+              {Math.round(image.pixelX)}, {Math.round(image.pixelY)} px
+            </dd>
+          </div>
+        )}
+        <div>
+          <dt>Ground per pixel</dt>
+          <dd>{formatMetres(size.metersPerPixel)}</dd>
+        </div>
+      </dl>
+
+      {!image.inFrame && (
+        <p className="note warn">
+          The target is outside the frame, {framing.angularOffsetDeg.toFixed(1)}°
+          off the optical axis against a {framing.horizontalFovDeg.toFixed(0)}° ×{" "}
+          {framing.verticalFovDeg.toFixed(0)}° view. Aim at it, or widen the
+          field of view.
+        </p>
+      )}
+
+      {image.inFrame && (
+        <p className="note">
+          The reference object would cover about{" "}
+          <strong>
+            {formatPixels(size.widthPixels)} × {formatPixels(size.heightPixels)}
+          </strong>{" "}
+          pixels of a {framing.widthPixels} × {framing.heightPixels} image.
+        </p>
+      )}
+    </>
+  );
+}
+
+function LensComparison(props: {
+  rows: LensComparisonRow[];
+  resolutionLabel: string;
+}) {
+  return (
+    <div className="lens-compare">
+      <table>
+        <caption className="field-label">
+          Reference object at {props.resolutionLabel}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Framing</th>
+            <th scope="col">FOV</th>
+            <th scope="col">Object</th>
+            <th scope="col">m/px</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((row) => (
+            <tr key={row.presetId} className={row.active ? "active" : ""}>
+              <th scope="row">{row.label}</th>
+              <td>{row.horizontalFovDeg}°</td>
+              <td>{row.inFrame ? `${formatPixels(row.objectWidthPixels)} px` : "—"}</td>
+              <td>{formatMetres(row.metersPerPixel)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="note muted">
+        A dash means the target falls outside that framing from the camera's
+        current aim.
+      </p>
+    </div>
+  );
+}
+
+function formatPixels(value: number): string {
+  if (value >= 100) return String(Math.round(value));
+  if (value >= 10) return value.toFixed(0);
+  return value.toFixed(1);
+}
+
+function formatMetres(value: number): string {
+  if (value >= 1) return `${value.toFixed(2)} m`;
+  return `${(value * 100).toFixed(1)} cm`;
 }
 
 function SightLineReadout({ state }: { state: SightLineState }) {
