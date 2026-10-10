@@ -19,6 +19,10 @@ import {
   DEFAULT_RESOLUTION_ID,
   DEFAULT_TARGET_SIZE_ID,
 } from "../optics/projection";
+import {
+  cameraConfiguration,
+  DEFAULT_CONFIGURATION_ID,
+} from "../optics/configurations";
 
 export interface SolarHouseState {
   objects: Record<string, SceneObject>;
@@ -60,6 +64,10 @@ export interface SolarHouseState {
   surfTargetArmed: boolean;
   /** Output format and reference object the framing estimates are made against. */
   capture: CaptureSettings;
+  /** Which named configuration the live camera was last set from. */
+  cameraConfigurationId: string;
+  /** Mounting positions kept for comparison. */
+  savedMounts: SavedMount[];
   /** Set while the navigation camera is borrowed to look through the mount. */
   lookingThrough: boolean;
 
@@ -87,7 +95,31 @@ export interface SolarHouseState {
   updateSurfTarget(patch: Partial<SightTarget>): void;
   armSurfTarget(armed: boolean): void;
   setCapture(patch: Partial<CaptureSettings>): void;
+  setCameraConfiguration(id: string): void;
+  saveMount(name: string): string | null;
+  selectMount(id: string): void;
+  renameMount(id: string, name: string): void;
+  deleteMount(id: string): void;
   setLookingThrough(looking: boolean): void;
+}
+
+/**
+ * A mounting position kept for comparison.
+ *
+ * A snapshot, not a live camera: `surfCam` remains the single camera in the
+ * scene, and selecting a saved mount copies this back into it. That keeps
+ * every existing consumer of `surfCam` working untouched, and means an
+ * unsaved placement is never silently discarded by the list.
+ */
+export interface SavedMount {
+  id: string;
+  name: string;
+  ground: GeoPosition;
+  mountHeightMeters: number;
+  bearingDeg: number;
+  tiltDeg: number;
+  horizontalFovDeg: number;
+  configurationId: string;
 }
 
 /**
@@ -151,6 +183,8 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
     customWidthMeters: 2,
     customHeightMeters: 2,
   },
+  cameraConfigurationId: DEFAULT_CONFIGURATION_ID,
+  savedMounts: [],
   lookingThrough: false,
 
   addObject(object) {
@@ -325,6 +359,74 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
           patch.customHeightMeters ?? state.capture.customHeightMeters,
         ),
       },
+    }));
+  },
+
+  setCameraConfiguration(id) {
+    const configuration = cameraConfiguration(id);
+    if (!configuration) return;
+    // Sets the framing and leaves everything else alone: a configuration is a
+    // starting point, not a lock on what the camera may be adjusted to.
+    set((state) => ({
+      cameraConfigurationId: id,
+      surfCam: state.surfCam
+        ? constrainCamera({
+            ...state.surfCam,
+            horizontalFovDeg: configuration.horizontalFovDeg,
+          })
+        : state.surfCam,
+    }));
+  },
+
+  saveMount(name) {
+    const state = useSolarHouseStore.getState();
+    const camera = state.surfCam;
+    if (!camera) return null;
+
+    const id = `mount-${state.savedMounts.length + 1}-${Date.now().toString(36)}`;
+    const mount: SavedMount = {
+      id,
+      name: name.trim() || `Mount ${state.savedMounts.length + 1}`,
+      ground: { ...camera.ground },
+      mountHeightMeters: camera.mountHeightMeters,
+      bearingDeg: camera.bearingDeg,
+      tiltDeg: camera.tiltDeg,
+      horizontalFovDeg: camera.horizontalFovDeg,
+      configurationId: state.cameraConfigurationId,
+    };
+    set({ savedMounts: [...state.savedMounts, mount] });
+    return id;
+  },
+
+  selectMount(id) {
+    set((state) => {
+      const mount = state.savedMounts.find((entry) => entry.id === id);
+      if (!mount || !state.surfCam) return state;
+      return {
+        cameraConfigurationId: mount.configurationId,
+        surfCam: constrainCamera({
+          ...state.surfCam,
+          ground: { ...mount.ground },
+          mountHeightMeters: mount.mountHeightMeters,
+          bearingDeg: mount.bearingDeg,
+          tiltDeg: mount.tiltDeg,
+          horizontalFovDeg: mount.horizontalFovDeg,
+        }),
+      };
+    });
+  },
+
+  renameMount(id, name) {
+    set((state) => ({
+      savedMounts: state.savedMounts.map((mount) =>
+        mount.id === id ? { ...mount, name: name.trim() || mount.name } : mount,
+      ),
+    }));
+  },
+
+  deleteMount(id) {
+    set((state) => ({
+      savedMounts: state.savedMounts.filter((mount) => mount.id !== id),
     }));
   },
 

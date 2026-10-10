@@ -231,6 +231,20 @@ export function metersPerPixel(setup: ImagingSetup, distanceMeters: number): num
   return distanceMeters / focalPixels;
 }
 
+/**
+ * Ground width the frame spans at a given range, across the line of sight.
+ *
+ * How much of the bay a lens takes in at the target: the figure that says
+ * whether a framing holds the whole break or a slice of it.
+ */
+export function frameWidthMeters(
+  horizontalFovDeg: number,
+  distanceMeters: number,
+): number {
+  if (distanceMeters <= 0) return 0;
+  return 2 * distanceMeters * Math.tan((horizontalFovDeg / 2) * DEG);
+}
+
 export interface AimAtTarget {
   bearingDeg: number;
   tiltDeg: number;

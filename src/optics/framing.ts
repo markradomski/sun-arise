@@ -11,6 +11,7 @@ import {
 } from "./geodesy";
 import type { EnuOffset } from "./frustum";
 import {
+  frameWidthMeters,
   metersPerPixel,
   outputResolution,
   projectDirection,
@@ -131,9 +132,16 @@ export interface LensComparisonRow {
   presetId: string;
   label: string;
   horizontalFovDeg: number;
+  verticalFovDeg: number;
+  /** Ground width the frame spans at the target. */
+  frameWidthMeters: number;
   /** Pixel width of the reference object at this lens. */
   objectWidthPixels: number;
   metersPerPixel: number;
+  /**
+   * Whether the target falls inside this framing. Geometry only: terrain can
+   * still stand in the way, and that verdict is the same for every lens.
+   */
   inFrame: boolean;
   /** True when this row matches the camera's current field of view. */
   active: boolean;
@@ -163,6 +171,8 @@ export function compareLenses(
       presetId: preset.id,
       label: preset.label,
       horizontalFovDeg: preset.horizontalFovDeg,
+      verticalFovDeg: framing.verticalFovDeg,
+      frameWidthMeters: frameWidthMeters(preset.horizontalFovDeg, distanceMeters),
       objectWidthPixels: framing.size.widthPixels,
       metersPerPixel: metersPerPixel(
         imagingSetup(camera, resolutionId, preset.horizontalFovDeg),

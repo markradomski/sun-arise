@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import Section from "./Section";
 import {
   cameraElevationMeters,
@@ -34,7 +34,28 @@ import {
   outputResolution,
 } from "../optics/projection";
 import type { Framing, LensComparisonRow } from "../optics/framing";
-import { CUSTOM_TARGET_SIZE_ID, type CaptureSettings } from "../state/store";
+import {
+  CUSTOM_TARGET_SIZE_ID,
+  type CaptureSettings,
+  type SavedMount,
+} from "../state/store";
+import {
+  CAMERA_CONFIGURATIONS,
+  cameraConfiguration,
+  nominalRangeLabel,
+} from "../optics/configurations";
+
+interface ConfigProps {
+  configurationId: string;
+  onConfiguration: (id: string) => void;
+  frustumVisible: boolean;
+  onFrustumVisible: (visible: boolean) => void;
+  savedMounts: SavedMount[];
+  onSaveMount: (name: string) => void;
+  onSelectMount: (id: string) => void;
+  onRenameMount: (id: string, name: string) => void;
+  onDeleteMount: (id: string) => void;
+}
 
 interface FramingProps {
   /** Null until a target is placed. */
@@ -47,7 +68,7 @@ interface FramingProps {
   onOverlayVisible: (visible: boolean) => void;
 }
 
-interface Props extends FramingProps {
+interface Props extends FramingProps, ConfigProps {
   camera: InstallationCamera | null;
   armed: boolean;
   lookingThrough: boolean;
@@ -81,8 +102,74 @@ export default function SurfCamPanel(props: Props) {
     customHeight: useId(),
   };
 
+  const configuration = cameraConfiguration(props.configurationId);
+
   return (
     <>
+      <Section title="Configuration">
+        <div className="button-row" role="group" aria-label="Camera configuration">
+          {CAMERA_CONFIGURATIONS.map((option) => (
+            <button
+              key={option.id}
+              className={props.configurationId === option.id ? "active" : ""}
+              aria-pressed={props.configurationId === option.id}
+              onClick={() => props.onConfiguration(option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {configuration && (
+          <dl className="readout-grid">
+            <div>
+              <dt>Type</dt>
+              <dd>{configuration.kind === "PTZ" ? "Pan/tilt/zoom" : "Fixed"}</dd>
+            </div>
+            <div>
+              <dt>Typical</dt>
+              <dd>{nominalRangeLabel(configuration)}</dd>
+            </div>
+          </dl>
+        )}
+
+        {configuration?.zoomPresetsDeg && camera && (
+          <>
+            <span className="field-label">Zoom presets</span>
+            <div className="button-row" role="group" aria-label="Zoom presets">
+              {configuration.zoomPresetsDeg.map((fov) => (
+                <button
+                  key={fov}
+                  className={
+                    Math.abs(camera.horizontalFovDeg - fov) < 0.5 ? "active" : ""
+                  }
+                  onClick={() => props.onChange({ horizontalFovDeg: fov })}
+                >
+                  {fov}°
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <p className="note muted">
+          {configuration?.purpose} A configuration only sets a starting field
+          of view — aim, height and framing all stay adjustable, including on
+          the fixed types, so the site can be planned before anything is
+          chosen.
+        </p>
+
+        <div className="button-row">
+          <button
+            className={props.frustumVisible ? "active" : "secondary"}
+            aria-pressed={props.frustumVisible}
+            onClick={() => props.onFrustumVisible(!props.frustumVisible)}
+          >
+            {props.frustumVisible ? "Hide" : "Show"} frustum
+          </button>
+        </div>
+      </Section>
+
       <Section title="Camera mount">
         <div className="button-row">
           <button
@@ -155,6 +242,14 @@ export default function SurfCamPanel(props: Props) {
               step={0.5}
               suffix=" m"
               onChange={(mountHeightMeters) => props.onChange({ mountHeightMeters })}
+            />
+
+            <SavedMounts
+              mounts={props.savedMounts}
+              onSave={props.onSaveMount}
+              onSelect={props.onSelectMount}
+              onRename={props.onRenameMount}
+              onDelete={props.onDeleteMount}
             />
           </>
         )}
@@ -463,6 +558,130 @@ export default function SurfCamPanel(props: Props) {
   );
 }
 
+/**
+ * Mounting positions kept side by side.
+ *
+ * Saving copies the camera as it stands; selecting copies one back. The live
+ * camera is never a reference into this list, so adjusting it after saving
+ * cannot quietly rewrite a position that has already been recorded.
+ */
+function SavedMounts(props: {
+  mounts: SavedMount[];
+  onSave: (name: string) => void;
+  onSelect: (id: string) => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const nameId = useId();
+
+  const save = () => {
+    props.onSave(name);
+    setName("");
+  };
+
+  return (
+    <div className="mounts">
+      <label className="field-label" htmlFor={nameId}>
+        Save this position
+      </label>
+      <div className="location-row">
+        <input
+          id={nameId}
+          type="text"
+          value={name}
+          placeholder="Upper deck"
+          autoComplete="off"
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              save();
+            }
+          }}
+        />
+        <button type="button" onClick={save}>
+          Save
+        </button>
+      </div>
+
+      {props.mounts.length === 0 ? (
+        <p className="note muted">
+          Saved positions let you move the camera and come back, or compare two
+          mounts against the same target.
+        </p>
+      ) : (
+        <ul className="mount-list">
+          {props.mounts.map((mount) => (
+            <li key={mount.id}>
+              {renaming === mount.id ? (
+                <div className="location-row">
+                  <input
+                    type="text"
+                    value={draft}
+                    autoFocus
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        props.onRename(mount.id, draft);
+                        setRenaming(null);
+                      }
+                      if (event.key === "Escape") setRenaming(null);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      props.onRename(mount.id, draft);
+                      setRenaming(null);
+                    }}
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="mount-select"
+                    onClick={() => props.onSelect(mount.id)}
+                  >
+                    <span className="mount-name">{mount.name}</span>
+                    <span className="mount-detail">
+                      {mount.mountHeightMeters.toFixed(1)} m ·{" "}
+                      {Math.round(mount.bearingDeg)}° ·{" "}
+                      {Math.round(mount.horizontalFovDeg)}°
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => {
+                      setRenaming(mount.id);
+                      setDraft(mount.name);
+                    }}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => props.onDelete(mount.id)}
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function FramingReadout({ framing }: { framing: Framing }) {
   const { image, size } = framing;
 
@@ -526,7 +745,8 @@ function LensComparison(props: {
         <thead>
           <tr>
             <th scope="col">Framing</th>
-            <th scope="col">FOV</th>
+            <th scope="col">H × V</th>
+            <th scope="col">Frame</th>
             <th scope="col">Object</th>
             <th scope="col">m/px</th>
           </tr>
@@ -535,7 +755,10 @@ function LensComparison(props: {
           {props.rows.map((row) => (
             <tr key={row.presetId} className={row.active ? "active" : ""}>
               <th scope="row">{row.label}</th>
-              <td>{row.horizontalFovDeg}°</td>
+              <td>
+                {row.horizontalFovDeg}°×{row.verticalFovDeg.toFixed(0)}°
+              </td>
+              <td>{formatWide(row.frameWidthMeters)}</td>
               <td>{row.inFrame ? `${formatPixels(row.objectWidthPixels)} px` : "—"}</td>
               <td>{formatMetres(row.metersPerPixel)}</td>
             </tr>
@@ -543,8 +766,9 @@ function LensComparison(props: {
         </tbody>
       </table>
       <p className="note muted">
-        A dash means the target falls outside that framing from the camera's
-        current aim.
+        Frame is the ground width the lens spans at the target. A dash means
+        the target falls outside that framing from the camera's current aim —
+        geometry only, and separate from whether terrain stands in the way.
       </p>
     </div>
   );
