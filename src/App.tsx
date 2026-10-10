@@ -72,6 +72,7 @@ import {
   targetSize,
 } from "./optics/projection";
 import { compareLenses, frameTarget } from "./optics/framing";
+import { analyseSightLine, type SightLineAnalysis } from "./optics/sightLine";
 import ViewfinderOverlay from "./components/ViewfinderOverlay";
 import {
   selectOrderedObjects,
@@ -153,6 +154,9 @@ export default function App() {
   const surfTargetArmed = useSolarHouseStore((s) => s.surfTargetArmed);
   const capture = useSolarHouseStore((s) => s.capture);
   const savedMounts = useSolarHouseStore((s) => s.savedMounts);
+  const configurationId = useSolarHouseStore((s) => s.cameraConfigurationId);
+  const [mountSightLines, setMountSightLines] = useState<Record<string, SightLineAnalysis | "PENDING" | "FAILED">>({});
+  const [frustumVisible, setFrustumVisible] = useState(true);
   const [overlayVisible, setOverlayVisible] = useState(true);
 
   /** The reference object the pixel estimates are measured against. */
@@ -175,6 +179,41 @@ export default function App() {
     surfCam && surfTarget
       ? frameTarget(surfCam, surfTarget, capture.resolutionId, referenceObject)
       : null;
+  useEffect(() => {
+    let cancelled = false;
+    if (!surfTarget || terrainStatus !== "READY" || savedMounts.length === 0) {
+      setMountSightLines({});
+      return;
+    }
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const profiler = new CesiumTerrainProfiler(
+      () => scene.getTerrainProvider(),
+      sampleElevations,
+    );
+    setMountSightLines(Object.fromEntries(savedMounts.map((mount) => [mount.id, "PENDING"])));
+    for (const mount of savedMounts) {
+      void profiler.profile(mount.ground, surfTarget.ground).then((profile) => {
+        if (cancelled) return;
+        const first = profile.samples[0]?.terrainElevationMeters;
+        const last = profile.samples[profile.samples.length - 1]?.terrainElevationMeters;
+        const result = analyseSightLine(profile, {
+          position: mount.ground,
+          terrainElevationMeters: first ?? mount.ground.height,
+          heightMeters: mount.mountHeightMeters,
+        }, {
+          position: surfTarget.ground,
+          terrainElevationMeters: last ?? surfTarget.ground.height,
+          heightMeters: surfTarget.heightMeters,
+        });
+        setMountSightLines((previous) => ({ ...previous, [mount.id]: result }));
+      }).catch(() => {
+        if (!cancelled) setMountSightLines((previous) => ({ ...previous, [mount.id]: "FAILED" }));
+      });
+    }
+    return () => { cancelled = true; };
+  }, [savedMounts, surfTarget, terrainStatus]);
+
   const lookingThrough = useSolarHouseStore((s) => s.lookingThrough);
   const terrainStatus = useSolarHouseStore((s) => s.terrainStatus);
   const [sightLine, setSightLine] = useState<SightLineState>({
@@ -795,7 +834,7 @@ export default function App() {
     // The frustum is the shape of the view seen from outside. Drawing it over
     // the view itself would put the camera's own edges across its picture.
     const show = appMode === "SURF_CAM" && !lookingThrough;
-    frustumRef.current?.update(show ? surfCam : null);
+    frustumRef.current?.update(show && frustumVisible ? surfCam : null);
   }, [appMode, surfCam, lookingThrough]);
 
   /**
@@ -1440,16 +1479,12 @@ export default function App() {
             onDeleteMount={(id) =>
               useSolarHouseStore.getState().deleteMount(id)
             }
-            configurationId={""}
-            onConfiguration={function (id: string): void {
-              throw new Error("Function not implemented.");
-            }}
-            frustumVisible={false}
-            onFrustumVisible={function (visible: boolean): void {
-              throw new Error("Function not implemented.");
-            }}
+            configurationId={configurationId}
+            onConfiguration={(id) => useSolarHouseStore.getState().setCameraConfiguration(id)}
+            frustumVisible={frustumVisible}
+            onFrustumVisible={setFrustumVisible}
+            mountSightLines={mountSightLines}
             savedMounts={savedMounts}
-            // Phase 2C mount comparison is being integrated.
           />
         )}
       </Controls>
