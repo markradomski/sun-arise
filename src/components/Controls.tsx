@@ -97,7 +97,7 @@ export default function Controls(props: Props) {
     <aside className={`controls${collapsed ? " collapsed" : ""}`}>
       {collapsed && (
         <div className="rail">
-          <div className="brand-mark">☀</div>
+          <BrandMark />
           <div className="rail-wordmark" aria-hidden="true">
             <span>SUN</span>
             <span>ARISE</span>
@@ -121,10 +121,11 @@ export default function Controls(props: Props) {
           the accessibility tree. */}
       <div className="controls-body" id={bodyId}>
       <div className="brand">
-        <div className="brand-mark">☀</div>
-        <div>
-          <div className="eyebrow">SUN ARISE</div>
-          <h1>{props.siteName}</h1>
+        <BrandMark />
+        <div className="brand-text">
+          <h1>Sun Arise</h1>
+          <p className="eyebrow">Light places better</p>
+          <p className="brand-location">{props.siteName}</p>
         </div>
         <button
           ref={collapseRef}
@@ -249,6 +250,26 @@ export default function Controls(props: Props) {
       <p className="hint">Drag the house to move it · drag the white handle to turn it</p>
       </div>
     </aside>
+  );
+}
+
+/**
+ * The circular sunrise mark, shown in both the header and the collapsed rail.
+ *
+ * Decorative in both places: the wordmark beside it already carries the name,
+ * so an alt text here would only repeat it to a screen reader.
+ */
+function BrandMark() {
+  return (
+    <img
+      className="brand-mark"
+      src="/brand/sun-arise-mark.png"
+      alt=""
+      aria-hidden="true"
+      width={256}
+      height={256}
+      draggable={false}
+    />
   );
 }
 

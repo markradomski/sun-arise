@@ -419,14 +419,56 @@ input[type="date"]:focus {
 .delta.flat { color: #5e646c; }
 
 /* ── Panel chrome ───────────────────────────────────────────────────────── */
-.controls .brand { align-items: center; gap: 12px; margin-bottom: 4px; }
-.controls .brand h1 {
-  margin: 2px 0 0;
-  font-size: 17px;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+/* Logo, branding and the collapse control each get their own column, so a
+   long place name wraps instead of running under the button. */
+.controls .brand {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 14px;
+  margin-bottom: 10px;
 }
-.controls .brand .eyebrow { font-size: 10px; letter-spacing: .14em; }
+.controls .brand .brand-mark {
+  width: 62px;
+  height: 62px;
+  /* The artwork is a circle on transparency; nothing else to mask. */
+  display: block;
+  user-select: none;
+}
+.controls .brand-text { min-width: 0; }
+.controls .brand h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  color: #fff;
+}
+.controls .brand .eyebrow {
+  margin: 3px 0 0;
+  font-size: 9.5px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: #c9cdd3;
+  font-weight: 600;
+}
+.controls .brand-location {
+  margin: 7px 0 0;
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: #f2efe7;
+}
+/* Pinned to the top row so it stays clear of a wrapped place name. */
+.controls .brand .panel-toggle { align-self: start; }
+
+@media (max-width: 700px) {
+  .controls .brand { gap: 0 11px; margin-bottom: 8px; }
+  .controls .brand .brand-mark { width: 48px; height: 48px; }
+  .controls .brand h1 { font-size: 26px; }
+  .controls .brand .eyebrow { font-size: 8.5px; letter-spacing: .18em; }
+  .controls .brand-location { font-size: 14px; margin-top: 5px; }
+}
 
 .controls .time { font-size: 30px; line-height: 1; }
 .controls .time-row { align-items: baseline; }
@@ -644,7 +686,7 @@ input[type="date"]:focus {
   align-items: center;
   gap: 10px;
 }
-.rail .brand-mark { font-size: 26px; }
+.rail .brand-mark { width: 38px; height: 38px; display: block; }
 .rail-wordmark {
   display: flex;
   flex-direction: column;
