@@ -50,6 +50,10 @@ export interface SolarHouseState {
   surfCam: InstallationCamera | null;
   /** The next ground click places the surf camera's mount. */
   surfCamArmed: boolean;
+  /** Point whose terrain line of sight from the camera is being analysed. */
+  surfTarget: SightTarget | null;
+  /** The next ground click places the sight-line target. */
+  surfTargetArmed: boolean;
   /** Set while the navigation camera is borrowed to look through the mount. */
   lookingThrough: boolean;
 
@@ -73,11 +77,29 @@ export interface SolarHouseState {
   setSurfCam(camera: InstallationCamera | null): void;
   updateSurfCam(patch: Partial<Omit<InstallationCamera, "id">>): void;
   armSurfCam(armed: boolean): void;
+  setSurfTarget(target: SightTarget | null): void;
+  updateSurfTarget(patch: Partial<SightTarget>): void;
+  armSurfTarget(armed: boolean): void;
   setLookingThrough(looking: boolean): void;
 }
 
 /** Solar analysis and Surf Cam are separate workflows over one scene. */
 export type AppMode = "SOLAR" | "SURF_CAM";
+
+/**
+ * A point the camera is being tested against — a spot in the bay, not a
+ * second camera and not a scene object. It owns no model and never casts a
+ * shadow, so it stays out of `objects` and out of solar analysis entirely.
+ */
+export interface SightTarget {
+  /** Ground point; `height` is the sampled terrain elevation there. */
+  ground: GeoPosition;
+  /** Metres above that terrain, for a wave or an object rather than the seabed. */
+  heightMeters: number;
+}
+
+export const MIN_TARGET_HEIGHT_METERS = 0;
+export const MAX_TARGET_HEIGHT_METERS = 20;
 
 export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   objects: {},
@@ -99,6 +121,8 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   appMode: "SOLAR",
   surfCam: null,
   surfCamArmed: false,
+  surfTarget: null,
+  surfTargetArmed: false,
   lookingThrough: false,
 
   addObject(object) {
@@ -213,10 +237,12 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   },
 
   setAppMode(mode) {
-    // Leaving Surf Cam must not leave the navigation camera borrowed.
+    // Leaving Surf Cam must not leave the navigation camera borrowed, nor a
+    // click armed to place something Solar Analysis knows nothing about.
     set((state) => ({
       appMode: mode,
       surfCamArmed: mode === "SURF_CAM" ? state.surfCamArmed : false,
+      surfTargetArmed: mode === "SURF_CAM" ? state.surfTargetArmed : false,
       lookingThrough: mode === "SURF_CAM" ? state.lookingThrough : false,
     }));
   },
@@ -234,7 +260,25 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   },
 
   armSurfCam(armed) {
-    set({ surfCamArmed: armed });
+    // The two placement gestures compete for the same click, so arming one
+    // disarms the other rather than letting the handler order decide.
+    set(armed ? { surfCamArmed: true, surfTargetArmed: false } : { surfCamArmed: false });
+  },
+
+  setSurfTarget(target) {
+    set({ surfTarget: target ? constrainTarget(target) : null });
+  },
+
+  updateSurfTarget(patch) {
+    set((state) =>
+      state.surfTarget
+        ? { surfTarget: constrainTarget({ ...state.surfTarget, ...patch }) }
+        : {},
+    );
+  },
+
+  armSurfTarget(armed) {
+    set(armed ? { surfTargetArmed: true, surfCamArmed: false } : { surfTargetArmed: false });
   },
 
   setLookingThrough(looking) {
@@ -254,6 +298,16 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
     });
   },
 }));
+
+function constrainTarget(target: SightTarget): SightTarget {
+  const height = target.heightMeters;
+  return {
+    ...target,
+    heightMeters: Number.isFinite(height)
+      ? Math.min(MAX_TARGET_HEIGHT_METERS, Math.max(MIN_TARGET_HEIGHT_METERS, height))
+      : MIN_TARGET_HEIGHT_METERS,
+  };
+}
 
 if (import.meta.env.DEV) {
   (globalThis as Record<string, unknown>).__solarHouseStore = useSolarHouseStore;

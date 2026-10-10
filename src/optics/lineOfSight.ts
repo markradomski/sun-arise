@@ -39,6 +39,11 @@ export interface TerrainProfile {
   to: LatLng;
   /** Ordered by increasing distance, starting at the observer. */
   samples: ProfileSample[];
+  /**
+   * Finest spacing used, which is near the observer. Spacing widens with
+   * distance, so this is the resolution limit of the verdict rather than a
+   * uniform step.
+   */
   spacingMeters: number;
   /** Samples the terrain provider could not resolve. */
   unresolvedCount: number;
@@ -52,6 +57,31 @@ export interface LineOfSightOptions {
   refractionK?: number;
 }
 
+/**
+ * One sample with everything the verdict was based on.
+ *
+ * The profile chart plots these directly rather than recomputing the sight
+ * line, so what is drawn and what is reported cannot drift apart.
+ */
+export interface AnalysedSample {
+  position: LatLng;
+  distanceMeters: number;
+  /** As sampled, before any curvature correction. */
+  terrainElevationMeters: number | undefined;
+  /**
+   * Terrain lowered by the curvature drop at this distance: how far below a
+   * straight sight line the surface has fallen away. This is the series the
+   * clearance is measured against.
+   */
+  apparentTerrainMeters: number | undefined;
+  /** Straight line from observer to target, at this distance. */
+  lineElevationMeters: number;
+  /** Line minus apparent terrain. Negative where terrain blocks the view. */
+  clearanceMeters: number | undefined;
+  /** False at the two endpoints, which are excluded from the verdict. */
+  interior: boolean;
+}
+
 export interface LineOfSightResult {
   clear: boolean;
   /** Smallest gap between the sight line and the terrain, in metres. */
@@ -62,6 +92,10 @@ export interface LineOfSightResult {
   blockedAtMeters: number | null;
   /** True when samples were missing, so the verdict is incomplete. */
   incomplete: boolean;
+  /** How many interior samples actually carried an elevation. */
+  measuredCount: number;
+  /** Every sample, in order, with its computed line and clearance. */
+  samples: AnalysedSample[];
 }
 
 /**
@@ -84,34 +118,56 @@ export function lineOfSight(
   let minimumAt = 0;
   let blockedAt: number | null = null;
   let incomplete = profile.unresolvedCount > 0;
+  let measuredCount = 0;
 
-  // Only the ground *between* the ends can block the view. The observer and
-  // the target lie on the sight line by definition, so including them would
-  // pin the minimum clearance at zero for every profile and say nothing.
-  for (let index = 1; index < samples.length - 1; index += 1) {
-    const sample = samples[index];
-    if (sample.terrainElevationMeters === undefined) {
-      incomplete = true;
-      continue;
-    }
-    if (total <= 0) continue;
+  const analysed: AnalysedSample[] = samples.map((sample, index) => {
+    // Only the ground *between* the ends can block the view. The observer and
+    // the target lie on the sight line by definition, so including them would
+    // pin the minimum clearance at zero for every profile and say nothing.
+    const interior = index > 0 && index < samples.length - 1;
 
-    const fraction = sample.distanceMeters / total;
+    const fraction = total > 0 ? sample.distanceMeters / total : 0;
     const lineElevation =
       options.observerElevationMeters +
       (options.targetElevationMeters - options.observerElevationMeters) * fraction;
 
+    if (sample.terrainElevationMeters === undefined) {
+      if (interior) incomplete = true;
+      return {
+        position: sample.position,
+        distanceMeters: sample.distanceMeters,
+        terrainElevationMeters: undefined,
+        apparentTerrainMeters: undefined,
+        lineElevationMeters: lineElevation,
+        clearanceMeters: undefined,
+        interior,
+      };
+    }
+
     const apparentTerrain =
       sample.terrainElevationMeters -
       curvatureDropMeters(sample.distanceMeters, refractionK);
-
     const clearance = lineElevation - apparentTerrain;
-    if (clearance < minimumClearance) {
-      minimumClearance = clearance;
-      minimumAt = sample.distanceMeters;
+
+    if (interior && total > 0) {
+      measuredCount += 1;
+      if (clearance < minimumClearance) {
+        minimumClearance = clearance;
+        minimumAt = sample.distanceMeters;
+      }
+      if (clearance < 0 && blockedAt === null) blockedAt = sample.distanceMeters;
     }
-    if (clearance < 0 && blockedAt === null) blockedAt = sample.distanceMeters;
-  }
+
+    return {
+      position: sample.position,
+      distanceMeters: sample.distanceMeters,
+      terrainElevationMeters: sample.terrainElevationMeters,
+      apparentTerrainMeters: apparentTerrain,
+      lineElevationMeters: lineElevation,
+      clearanceMeters: clearance,
+      interior,
+    };
+  });
 
   // Nothing between the ends was measurable, so there is no verdict to give.
   if (!Number.isFinite(minimumClearance)) {
@@ -121,6 +177,8 @@ export function lineOfSight(
       minimumClearanceAtMeters: 0,
       blockedAtMeters: null,
       incomplete: true,
+      measuredCount: 0,
+      samples: analysed,
     };
   }
 
@@ -130,22 +188,24 @@ export function lineOfSight(
     minimumClearanceAtMeters: minimumAt,
     blockedAtMeters: blockedAt,
     incomplete,
+    measuredCount,
+    samples: analysed,
   };
 }
 
 /**
- * Contract the future Cesium-side profiler must satisfy.
+ * Contract the Cesium-side profiler satisfies.
  *
- * `signal` is required rather than optional: a profile at surf-cam range is
- * thousands of terrain samples, and a camera that has since been dragged must
- * be able to abandon the request rather than let a stale result land. The
- * existing `TerrainSampler` solves the same problem with a token; either is
- * acceptable, but the capability is not.
+ * Sample positions are the profiler's business, not the caller's: spacing
+ * varies along the path (see `profilePlan`), so a caller can cap the budget
+ * but cannot name one spacing. `maxSamples` bounds the cost of a single
+ * request; rejecting superseded results is the profiler's own concern, as it
+ * already is for `TerrainSampler`.
  */
 export interface TerrainProfiler {
   profile(
     from: LatLng,
     to: LatLng,
-    options: { spacingMeters: number; signal: AbortSignal },
+    options?: { maxSamples?: number },
   ): Promise<TerrainProfile>;
 }

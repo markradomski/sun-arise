@@ -35,6 +35,12 @@ import {
 import { instantColour, instantOpacity } from "./solar/instantRamp";
 import { instantMatchesField } from "./scene/overlayPairing";
 import { FrustumLayer } from "./cesium/FrustumLayer";
+import { SightLineLayer } from "./cesium/SightLineLayer";
+import { CesiumTerrainProfiler } from "./cesium/TerrainProfiler";
+import {
+  SightLineAnalyser,
+  type SightLineState,
+} from "./optics/sightLineAnalyser";
 import { Geocoder } from "./cesium/geocode";
 import LocationSearch, { type ResolvedLocation } from "./components/LocationSearch";
 import SurfCamPanel from "./components/SurfCamPanel";
@@ -95,6 +101,8 @@ export default function App() {
   /** Guards the one-time camera placement so it never reruns. */
   const surfCamSeededRef = useRef(false);
   const frustumRef = useRef<FrustumLayer | null>(null);
+  const sightLineLayerRef = useRef<SightLineLayer | null>(null);
+  const sightLineAnalyserRef = useRef<SightLineAnalyser | null>(null);
   const geocoderRef = useRef<Geocoder | null>(null);
   /** Identifies the newest location lookup so a slow one cannot overwrite it. */
   const locationTokenRef = useRef(0);
@@ -122,8 +130,11 @@ export default function App() {
   const appMode = useSolarHouseStore((s) => s.appMode);
   const surfCam = useSolarHouseStore((s) => s.surfCam);
   const surfCamArmed = useSolarHouseStore((s) => s.surfCamArmed);
+  const surfTarget = useSolarHouseStore((s) => s.surfTarget);
+  const surfTargetArmed = useSolarHouseStore((s) => s.surfTargetArmed);
   const lookingThrough = useSolarHouseStore((s) => s.lookingThrough);
   const terrainStatus = useSolarHouseStore((s) => s.terrainStatus);
+  const [sightLine, setSightLine] = useState<SightLineState>({ status: "IDLE" });
   const [located, setLocated] = useState<ResolvedLocation | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -267,12 +278,49 @@ export default function App() {
       useSolarHouseStore.getState().setProbe({ ...location, height });
     }
 
+    /**
+     * Resamples the target's ground elevation at full detail. The click gives
+     * whatever the loaded tile happened to say, which at a distant, coarsely
+     * loaded part of the bay can be metres out.
+     */
+    async function settleTarget(location: GeoPosition) {
+      const provider = scene.getTerrainProvider();
+      const store = useSolarHouseStore.getState();
+      if (!provider || store.terrainStatus !== "READY" || disposed) return;
+
+      const [height] = await sampleElevations(provider, [location]);
+      if (disposed || height === undefined) return;
+
+      // A target placed again while this was in flight owns the scene now.
+      const current = useSolarHouseStore.getState().surfTarget;
+      if (
+        !current ||
+        current.ground.latitude !== location.latitude ||
+        current.ground.longitude !== location.longitude
+      ) {
+        return;
+      }
+      useSolarHouseStore
+        .getState()
+        .updateSurfTarget({ ground: { ...location, height } });
+    }
+
     const fieldOverlay = new HeatmapOverlay(scene.viewer);
     fieldOverlayRef.current = fieldOverlay;
 
     const frustum = new FrustumLayer(scene.viewer);
     frustumRef.current = frustum;
     geocoderRef.current = new Geocoder(scene.scene);
+
+    const sightLineLayer = new SightLineLayer(scene.viewer);
+    sightLineLayerRef.current = sightLineLayer;
+    sightLineAnalyserRef.current = new SightLineAnalyser({
+      profiler: new CesiumTerrainProfiler(
+        () => scene.getTerrainProvider(),
+        sampleElevations,
+      ),
+      onState: setSightLine,
+    });
 
     const probeMarker = new ProbeMarker(scene.viewer);
     const stopProbe = scene.viewer.scene.postUpdate.addEventListener(() => {
@@ -298,6 +346,15 @@ export default function App() {
             }),
           );
           store.armSurfCam(false);
+          return;
+        }
+
+        if (store.surfTargetArmed) {
+          // The click gives a ground point at the globe's current level of
+          // detail; the precise elevation is resampled before it is analysed.
+          store.setSurfTarget({ ground: location, heightMeters: 0 });
+          store.armSurfTarget(false);
+          void settleTarget(location);
           return;
         }
 
@@ -364,6 +421,10 @@ export default function App() {
       fieldOverlayRef.current = null;
       frustum.destroy();
       frustumRef.current = null;
+      sightLineLayer.destroy();
+      sightLineLayerRef.current = null;
+      sightLineAnalyserRef.current?.dispose();
+      sightLineAnalyserRef.current = null;
       geocoderRef.current = null;
       stopInitialFraming();
       drag.destroy();
@@ -658,6 +719,82 @@ export default function App() {
   useEffect(() => {
     frustumRef.current?.update(appMode === "SURF_CAM" ? surfCam : null);
   }, [appMode, surfCam]);
+
+  /**
+   * What the sight line actually depends on: the two physical endpoints.
+   *
+   * Bearing, tilt and field of view are deliberately absent. Aiming the
+   * camera changes the frustum, not where the ground is, so turning a slider
+   * must never trigger a terrain request.
+   */
+  const sightLineSignature =
+    surfCam && surfTarget
+      ? [
+          surfCam.ground.latitude,
+          surfCam.ground.longitude,
+          surfCam.ground.height,
+          surfCam.mountHeightMeters,
+          surfTarget.ground.latitude,
+          surfTarget.ground.longitude,
+          surfTarget.ground.height,
+          surfTarget.heightMeters,
+        ].join(":")
+      : null;
+
+  useEffect(() => {
+    const analyser = sightLineAnalyserRef.current;
+    if (!analyser) return;
+
+    const store = useSolarHouseStore.getState();
+    const camera = store.surfCam;
+    const target = store.surfTarget;
+    if (!sightLineSignature || !camera || !target) {
+      analyser.clear();
+      return;
+    }
+
+    analyser.request(
+      {
+        position: camera.ground,
+        terrainElevationMeters: camera.ground.height,
+        heightMeters: camera.mountHeightMeters,
+      },
+      {
+        position: target.ground,
+        terrainElevationMeters: target.ground.height,
+        heightMeters: target.heightMeters,
+      },
+    );
+  }, [sightLineSignature]);
+
+  useEffect(() => {
+    const store = useSolarHouseStore.getState();
+    const camera = store.surfCam;
+    if (appMode !== "SURF_CAM" || !camera || !surfTarget) {
+      sightLineLayerRef.current?.update(null);
+      return;
+    }
+
+    sightLineLayerRef.current?.update({
+      cameraEye: {
+        ...camera.ground,
+        height: cameraElevationMeters(camera),
+      },
+      targetGround: surfTarget.ground,
+      targetHeightMeters: surfTarget.heightMeters,
+      status: sightLine.status === "READY" ? sightLine.analysis.classification : "PENDING",
+    });
+  }, [appMode, surfCam, surfTarget, sightLine]);
+
+  // Escape backs out of target placement without having to find the button.
+  useEffect(() => {
+    if (!surfTargetArmed) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") useSolarHouseStore.getState().armSurfTarget(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [surfTargetArmed]);
 
   /**
    * Places the proposed camera on the startup site, so the opening scene holds
@@ -1064,6 +1201,18 @@ export default function App() {
             }}
             onLookThrough={handleLookThrough}
             onReturnView={handleReturnView}
+            target={surfTarget}
+            targetArmed={surfTargetArmed}
+            sightLine={sightLine}
+            onArmTarget={() => useSolarHouseStore.getState().armSurfTarget(true)}
+            onTargetHeight={(heightMeters) =>
+              useSolarHouseStore.getState().updateSurfTarget({ heightMeters })
+            }
+            onRemoveTarget={() => {
+              const store = useSolarHouseStore.getState();
+              store.setSurfTarget(null);
+              store.armSurfTarget(false);
+            }}
           />
         )}
       </Controls>

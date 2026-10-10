@@ -545,3 +545,54 @@ input[type="date"]:focus {
   font-variant-numeric: tabular-nums;
 }
 .slider-field { display: flex; flex-direction: column; gap: 4px; }
+
+/* ── Sight line verdict and terrain profile ─────────────────────────────── */
+.verdict {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .01em;
+}
+.verdict::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.verdict-clear { color: #5fd38b; }
+.verdict-obstructed { color: #ff6b6b; }
+.verdict-indeterminate { color: #ffc14d; }
+
+.profile-chart { margin: 0; display: flex; flex-direction: column; gap: 5px; }
+/* Scales uniformly, so the markers stay round and the labels stay legible
+   when the panel narrows. */
+.profile-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 12px;
+  background: rgba(255,255,255,.03);
+}
+.profile-axes line { stroke: rgba(255,255,255,.16); stroke-width: 1; }
+.profile-terrain { fill: rgba(142,148,156,.22); }
+.profile-terrain-edge { fill: none; stroke: #b4bcc6; stroke-width: 1.4; stroke-linejoin: round; }
+.profile-blocked { fill: rgba(255,107,107,.17); }
+.profile-sight { stroke-width: 1.6; stroke-dasharray: 5 3; }
+.profile-sight-clear { stroke: #5fd38b; }
+.profile-sight-obstructed { stroke: #ff6b6b; }
+.profile-sight-indeterminate { stroke: #ffc14d; }
+.profile-minimum { stroke: #ffc14d; stroke-width: 1.2; }
+.profile-eye { fill: #ffd36a; stroke: #05070a; stroke-width: 1; }
+.profile-target { fill: #66e0ff; stroke: #05070a; stroke-width: 1; }
+.profile-tick {
+  fill: #777d85;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.profile-tick-end { text-anchor: end; }
