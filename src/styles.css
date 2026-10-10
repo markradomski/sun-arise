@@ -738,14 +738,13 @@ input[type="date"]:focus {
 .viewfinder-frame {
   position: relative;
   box-sizing: border-box;
-  outline: 1px solid rgba(255, 255, 255, .36);
-  outline-offset: -1px;
+  border: 1px solid rgba(255, 255, 255, .45);
   background: rgba(0, 0, 0, .025);
 }
 .viewfinder-frame-label {
   position: absolute;
-  top: 8px;
-  left: 12px;
+  top: 20px;
+  left: 24px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: .13em;
@@ -759,10 +758,13 @@ input[type="date"]:focus {
   height: 18px;
   border: 1.5px solid rgba(255,255,255,.75);
 }
-.viewfinder-corner.tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
-.viewfinder-corner.tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
-.viewfinder-corner.br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
-.viewfinder-corner.bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+/* Keep guides within the recording rectangle. On 16:9 screens the
+   recording frame touches the viewport edges, so flush corners were clipped
+   or hidden under Cesium chrome and the collapsed control rail. */
+.viewfinder-corner.tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; }
+.viewfinder-corner.tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; }
+.viewfinder-corner.br { bottom: 12px; right: 12px; border-left: 0; border-top: 0; }
+.viewfinder-corner.bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; }
 .viewfinder-crosshair {
   position: absolute;
   top: 50%; left: 50%;
