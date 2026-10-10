@@ -419,14 +419,56 @@ input[type="date"]:focus {
 .delta.flat { color: #5e646c; }
 
 /* ── Panel chrome ───────────────────────────────────────────────────────── */
-.controls .brand { align-items: center; gap: 12px; margin-bottom: 4px; }
-.controls .brand h1 {
-  margin: 2px 0 0;
-  font-size: 17px;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+/* Logo, branding and the collapse control each get their own column, so a
+   long place name wraps instead of running under the button. */
+.controls .brand {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 14px;
+  margin-bottom: 10px;
 }
-.controls .brand .eyebrow { font-size: 10px; letter-spacing: .14em; }
+.controls .brand .brand-mark {
+  width: 62px;
+  height: 62px;
+  /* The artwork is a circle on transparency; nothing else to mask. */
+  display: block;
+  user-select: none;
+}
+.controls .brand-text { min-width: 0; }
+.controls .brand h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  color: #fff;
+}
+.controls .brand .eyebrow {
+  margin: 3px 0 0;
+  font-size: 9.5px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: #c9cdd3;
+  font-weight: 600;
+}
+.controls .brand-location {
+  margin: 7px 0 0;
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: #f2efe7;
+}
+/* Pinned to the top row so it stays clear of a wrapped place name. */
+.controls .brand .panel-toggle { align-self: start; }
+
+@media (max-width: 700px) {
+  .controls .brand { gap: 0 11px; margin-bottom: 8px; }
+  .controls .brand .brand-mark { width: 48px; height: 48px; }
+  .controls .brand h1 { font-size: 26px; }
+  .controls .brand .eyebrow { font-size: 8.5px; letter-spacing: .18em; }
+  .controls .brand-location { font-size: 14px; margin-top: 5px; }
+}
 
 .controls .time { font-size: 30px; line-height: 1; }
 .controls .time-row { align-items: baseline; }
@@ -481,4 +523,333 @@ input[type="date"]:focus {
   border-radius: 3px;
   display: inline-block;
   border: 1px solid rgba(255,255,255,.12);
+}
+
+/* ── Location search ────────────────────────────────────────────────────── */
+.location { display: flex; flex-direction: column; gap: 7px; }
+.location-row { display: flex; gap: 6px; }
+.location-row input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: #f2efe7;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px;
+}
+.location-row input[type="text"]::placeholder { color: #5e646c; }
+.location-row input[type="text"]:focus-visible {
+  outline: 2px solid rgba(242,239,231,.35);
+  outline-offset: 1px;
+}
+.location-row button {
+  flex: none;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: #d0ccc0;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.location-row button:hover:not(:disabled) { background: rgba(255,255,255,.1); color: #f2efe7; }
+.location-row button:disabled { opacity: .45; cursor: not-allowed; }
+.location-result { display: flex; flex-direction: column; gap: 2px; }
+.location-name { margin: 0; font-size: 13px; color: #f2efe7; line-height: 1.35; }
+.location-coords { margin: 0; font-size: 12px; color: #d0ccc0; font-variant-numeric: tabular-nums; }
+.location-elevation { margin: 0; font-size: 11px; }
+
+/* ── Surf cam readouts ──────────────────────────────────────────────────── */
+.readout-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 12px;
+  background: rgba(255,255,255,.03);
+}
+.readout-grid dt {
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #777d85;
+  font-weight: 400;
+}
+.readout-grid dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #f2efe7;
+  font-variant-numeric: tabular-nums;
+}
+.slider-field { display: flex; flex-direction: column; gap: 4px; }
+
+/* ── Sight line verdict and terrain profile ─────────────────────────────── */
+.verdict {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .01em;
+}
+.verdict::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.verdict-clear { color: #5fd38b; }
+.verdict-obstructed { color: #ff6b6b; }
+.verdict-indeterminate { color: #ffc14d; }
+
+.profile-chart { margin: 0; display: flex; flex-direction: column; gap: 5px; }
+/* Scales uniformly, so the markers stay round and the labels stay legible
+   when the panel narrows. */
+.profile-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 12px;
+  background: rgba(255,255,255,.03);
+}
+.profile-axes line { stroke: rgba(255,255,255,.16); stroke-width: 1; }
+.profile-terrain { fill: rgba(142,148,156,.22); }
+.profile-terrain-edge { fill: none; stroke: #b4bcc6; stroke-width: 1.4; stroke-linejoin: round; }
+.profile-blocked { fill: rgba(255,107,107,.17); }
+.profile-sight { stroke-width: 1.6; stroke-dasharray: 5 3; }
+.profile-sight-clear { stroke: #5fd38b; }
+.profile-sight-obstructed { stroke: #ff6b6b; }
+.profile-sight-indeterminate { stroke: #ffc14d; }
+.profile-minimum { stroke: #ffc14d; stroke-width: 1.2; }
+.profile-eye { fill: #ffd36a; stroke: #05070a; stroke-width: 1; }
+.profile-target { fill: #66e0ff; stroke: #05070a; stroke-width: 1; }
+.profile-tick {
+  fill: #777d85;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.profile-tick-end { text-anchor: end; }
+
+/* ── Collapsible panel ──────────────────────────────────────────────────── */
+/* Width only: the panel's own height is content-driven once collapsed, and
+   animating that as well would make the rail bounce on every toggle. */
+.controls { transition: width .22s ease; }
+
+.panel-toggle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 9px;
+  background: rgba(255,255,255,.05);
+  color: #9da2aa;
+  cursor: pointer;
+  transition: background .2s ease, color .2s ease, border-color .2s ease;
+}
+.panel-toggle:hover {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.2);
+  color: #f2efe7;
+}
+.panel-toggle:focus-visible { outline: 2px solid #ffd36a; outline-offset: 2px; }
+
+/* Sits opposite the wordmark in the panel header. */
+.controls .brand .panel-toggle { margin-left: auto; }
+
+.controls.collapsed {
+  width: 68px;
+  padding: 14px 8px;
+  /* Released from the full-height stretch so the rail is only as tall as
+     its contents, leaving the rest of the scene clickable. */
+  bottom: auto;
+  overflow: hidden;
+}
+/* Out of sight, out of the tab order and out of the accessibility tree,
+   while every control inside stays mounted and keeps its state. */
+.controls.collapsed .controls-body { display: none; }
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.rail .brand-mark { width: 38px; height: 38px; display: block; }
+.rail-wordmark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  color: #9da2aa;
+  /* The tracking is applied on the right of each glyph; nudge back so the
+     stacked words read as centred. */
+  text-indent: .14em;
+}
+
+@media (max-width: 700px) {
+  /* The expanded panel is bottom-anchored and full width here, so collapsing
+     has to drop the right edge or the rail stays a full-width bar — and has
+     to re-anchor to the bottom, since the desktop rule's `bottom: auto` would
+     otherwise meet this layout's `top: auto` and strand the rail at the top,
+     over the diagnostics chip. */
+  .controls.collapsed {
+    right: auto;
+    left: 10px;
+    top: auto;
+    bottom: 10px;
+    width: 68px;
+    max-height: none;
+    padding: 12px 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .controls { transition: none; }
+  .panel-toggle { transition: none; }
+}
+
+/* ── Viewfinder overlay ─────────────────────────────────────────────────── */
+/* Never intercepts a gesture: Cesium keeps every drag, wheel and pinch. */
+.viewfinder {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  font-variant-numeric: tabular-nums;
+}
+/* The part of the canvas the planned camera would actually record. */
+.viewfinder-frame {
+  position: relative;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, .45);
+  background: rgba(0, 0, 0, .025);
+}
+.viewfinder-frame-label {
+  position: absolute;
+  top: 20px;
+  left: 24px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .13em;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .9);
+}
+
+.viewfinder-corner {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid rgba(255,255,255,.75);
+}
+/* Keep guides within the recording rectangle. On 16:9 screens the
+   recording frame touches the viewport edges, so flush corners were clipped
+   or hidden under Cesium chrome and the collapsed control rail. */
+.viewfinder-corner.tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; }
+.viewfinder-corner.tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; }
+.viewfinder-corner.br { bottom: 12px; right: 12px; border-left: 0; border-top: 0; }
+.viewfinder-corner.bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; }
+.viewfinder-crosshair {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 22px; height: 22px;
+  transform: translate(-50%, -50%);
+  background:
+    linear-gradient(rgba(255,255,255,.8), rgba(255,255,255,.8)) center/1px 100% no-repeat,
+    linear-gradient(rgba(255,255,255,.8), rgba(255,255,255,.8)) center/100% 1px no-repeat;
+}
+.viewfinder-target {
+  position: absolute;
+  width: 16px; height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2px solid #66e0ff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(5,7,10,.7), inset 0 0 0 1px rgba(5,7,10,.7);
+}
+.viewfinder-readout {
+  position: absolute;
+  right: 20px; bottom: 20px;
+  display: flex;
+  gap: 14px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 10px;
+  background: rgba(10,12,15,.72);
+  backdrop-filter: blur(10px);
+  color: #d0ccc0;
+  font-size: 11px;
+  letter-spacing: .03em;
+}
+
+/* ── Framing panel ──────────────────────────────────────────────────────── */
+.custom-size {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  align-items: center;
+  gap: 6px 8px;
+}
+.custom-size input {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 9px;
+  background: rgba(255,255,255,.05);
+  color: #f2efe7;
+}
+.lens-compare table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.lens-compare caption {
+  text-align: left;
+  padding-bottom: 6px;
+}
+.lens-compare th, .lens-compare td {
+  padding: 5px 6px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 400;
+  color: #d0ccc0;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.lens-compare thead th {
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #777d85;
+}
+.lens-compare tbody th, .lens-compare thead th:first-child { text-align: left; }
+.lens-compare tbody tr.active th, .lens-compare tbody tr.active td {
+  color: #f2efe7;
+  background: rgba(255,255,255,.05);
+}
+@media (max-width: 700px) {
+  /* The panel is bottom-anchored here and would sit on top of the readout,
+     so it moves up under the diagnostics chip instead. */
+  .viewfinder-readout {
+    top: 58px;
+    left: 10px;
+    right: auto;
+    bottom: auto;
+    flex-wrap: wrap;
+    font-size: 10px;
+    gap: 4px 10px;
+  }
 }

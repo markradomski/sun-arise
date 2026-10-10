@@ -10,8 +10,19 @@ import {
 import type { FootprintTerrain } from "../scene/terrainAnalysis";
 import type { Season } from "../solar/seasons";
 import type { FieldMode } from "../solar/fieldMode";
+import { DEFAULT_OVERLAY_OPACITY } from "../cesium/HeatmapOverlay";
 import type { BoxOccluder } from "../solar/exposure";
+import type { InstallationCamera } from "../optics/camera";
+import { constrainCamera } from "../optics/camera";
 import { catalogEntry, DEFAULT_HOUSE_SLUG } from "../houses/catalog";
+import {
+  DEFAULT_RESOLUTION_ID,
+  DEFAULT_TARGET_SIZE_ID,
+} from "../optics/projection";
+import {
+  cameraConfiguration,
+  DEFAULT_CONFIGURATION_ID,
+} from "../optics/configurations";
 
 export interface SolarHouseState {
   objects: Record<string, SceneObject>;
@@ -31,6 +42,8 @@ export interface SolarHouseState {
   fieldEnabled: boolean;
   /** What the sunlight overlay represents, independent of its visibility. */
   fieldMode: FieldMode;
+  /** Master opacity of the sunlight overlay. Display only; never analytical. */
+  fieldOpacity: number;
   /** Active seasonal preset, or null when analysing an arbitrary date. */
   season: Season | null;
   /**
@@ -38,6 +51,25 @@ export interface SolarHouseState {
    * a computed field, so the comparison stays valid when the date changes.
    */
   baseline: BoxOccluder[] | null;
+
+  /** Which workflow the UI is in. Solar analysis is unaffected by Surf Cam. */
+  appMode: AppMode;
+  /** The virtual installation camera being designed, if one is placed. */
+  surfCam: InstallationCamera | null;
+  /** The next ground click places the surf camera's mount. */
+  surfCamArmed: boolean;
+  /** Point whose terrain line of sight from the camera is being analysed. */
+  surfTarget: SightTarget | null;
+  /** The next ground click places the sight-line target. */
+  surfTargetArmed: boolean;
+  /** Output format and reference object the framing estimates are made against. */
+  capture: CaptureSettings;
+  /** Which named configuration the live camera was last set from. */
+  cameraConfigurationId: string;
+  /** Mounting positions kept for comparison. */
+  savedMounts: SavedMount[];
+  /** Set while the navigation camera is borrowed to look through the mount. */
+  lookingThrough: boolean;
 
   addObject(object: Omit<SceneObject, "id">): string;
   addHouse(position: GeoPosition, slug?: string): string;
@@ -52,9 +84,76 @@ export interface SolarHouseState {
   armProbe(armed: boolean): void;
   setFieldEnabled(enabled: boolean): void;
   setFieldMode(mode: FieldMode): void;
+  setFieldOpacity(opacity: number): void;
   setSeason(season: Season | null): void;
   setBaseline(baseline: BoxOccluder[] | null): void;
+  setAppMode(mode: AppMode): void;
+  setSurfCam(camera: InstallationCamera | null): void;
+  updateSurfCam(patch: Partial<Omit<InstallationCamera, "id">>): void;
+  armSurfCam(armed: boolean): void;
+  setSurfTarget(target: SightTarget | null): void;
+  updateSurfTarget(patch: Partial<SightTarget>): void;
+  armSurfTarget(armed: boolean): void;
+  setCapture(patch: Partial<CaptureSettings>): void;
+  setCameraConfiguration(id: string): void;
+  saveMount(name: string): string | null;
+  selectMount(id: string): void;
+  renameMount(id: string, name: string): void;
+  deleteMount(id: string): void;
+  setLookingThrough(looking: boolean): void;
 }
+
+/**
+ * A mounting position kept for comparison.
+ *
+ * A snapshot, not a live camera: `surfCam` remains the single camera in the
+ * scene, and selecting a saved mount copies this back into it. That keeps
+ * every existing consumer of `surfCam` working untouched, and means an
+ * unsaved placement is never silently discarded by the list.
+ */
+export interface SavedMount {
+  id: string;
+  name: string;
+  ground: GeoPosition;
+  mountHeightMeters: number;
+  bearingDeg: number;
+  tiltDeg: number;
+  horizontalFovDeg: number;
+  configurationId: string;
+}
+
+/**
+ * Planning inputs for the framing estimates. Not optics and not scene: they
+ * say what camera is being imagined and what is being measured against it.
+ */
+export interface CaptureSettings {
+  /** Id from `OUTPUT_RESOLUTIONS`. */
+  resolutionId: string;
+  /** Id from `TARGET_SIZES`, or `CUSTOM_TARGET_SIZE_ID`. */
+  targetSizeId: string;
+  customWidthMeters: number;
+  customHeightMeters: number;
+}
+
+export const CUSTOM_TARGET_SIZE_ID = "custom";
+
+/** Solar analysis and Surf Cam are separate workflows over one scene. */
+export type AppMode = "SOLAR" | "SURF_CAM";
+
+/**
+ * A point the camera is being tested against — a spot in the bay, not a
+ * second camera and not a scene object. It owns no model and never casts a
+ * shadow, so it stays out of `objects` and out of solar analysis entirely.
+ */
+export interface SightTarget {
+  /** Ground point; `height` is the sampled terrain elevation there. */
+  ground: GeoPosition;
+  /** Metres above that terrain, for a wave or an object rather than the seabed. */
+  heightMeters: number;
+}
+
+export const MIN_TARGET_HEIGHT_METERS = 0;
+export const MAX_TARGET_HEIGHT_METERS = 20;
 
 export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   objects: {},
@@ -70,8 +169,23 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   probeArmed: false,
   fieldEnabled: false,
   fieldMode: "NOW",
+  fieldOpacity: DEFAULT_OVERLAY_OPACITY,
   season: null,
   baseline: null,
+  appMode: "SOLAR",
+  surfCam: null,
+  surfCamArmed: false,
+  surfTarget: null,
+  surfTargetArmed: false,
+  capture: {
+    resolutionId: DEFAULT_RESOLUTION_ID,
+    targetSizeId: DEFAULT_TARGET_SIZE_ID,
+    customWidthMeters: 2,
+    customHeightMeters: 2,
+  },
+  cameraConfigurationId: DEFAULT_CONFIGURATION_ID,
+  savedMounts: [],
+  lookingThrough: false,
 
   addObject(object) {
     const id = nextObjectId(object.type);
@@ -176,8 +290,150 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
     set({ fieldMode: mode });
   },
 
+  setFieldOpacity(opacity) {
+    set({ fieldOpacity: Math.min(1, Math.max(0.15, opacity)) });
+  },
+
   setSeason(season) {
     set({ season });
+  },
+
+  setAppMode(mode) {
+    // Leaving Surf Cam must not leave the navigation camera borrowed, nor a
+    // click armed to place something Solar Analysis knows nothing about.
+    set((state) => ({
+      appMode: mode,
+      surfCamArmed: mode === "SURF_CAM" ? state.surfCamArmed : false,
+      surfTargetArmed: mode === "SURF_CAM" ? state.surfTargetArmed : false,
+      lookingThrough: mode === "SURF_CAM" ? state.lookingThrough : false,
+    }));
+  },
+
+  setSurfCam(camera) {
+    set({ surfCam: camera ? constrainCamera(camera) : null });
+  },
+
+  updateSurfCam(patch) {
+    set((state) =>
+      state.surfCam
+        ? { surfCam: constrainCamera({ ...state.surfCam, ...patch }) }
+        : {},
+    );
+  },
+
+  armSurfCam(armed) {
+    // The two placement gestures compete for the same click, so arming one
+    // disarms the other rather than letting the handler order decide.
+    set(armed ? { surfCamArmed: true, surfTargetArmed: false } : { surfCamArmed: false });
+  },
+
+  setSurfTarget(target) {
+    set({ surfTarget: target ? constrainTarget(target) : null });
+  },
+
+  updateSurfTarget(patch) {
+    set((state) =>
+      state.surfTarget
+        ? { surfTarget: constrainTarget({ ...state.surfTarget, ...patch }) }
+        : {},
+    );
+  },
+
+  armSurfTarget(armed) {
+    set(armed ? { surfTargetArmed: true, surfCamArmed: false } : { surfTargetArmed: false });
+  },
+
+  setCapture(patch) {
+    set((state) => ({
+      capture: {
+        ...state.capture,
+        ...patch,
+        // A reference object with no size would divide the framing estimates
+        // by zero and report an infinitely small footprint.
+        customWidthMeters: Math.max(
+          0.1,
+          patch.customWidthMeters ?? state.capture.customWidthMeters,
+        ),
+        customHeightMeters: Math.max(
+          0.1,
+          patch.customHeightMeters ?? state.capture.customHeightMeters,
+        ),
+      },
+    }));
+  },
+
+  setCameraConfiguration(id) {
+    const configuration = cameraConfiguration(id);
+    if (!configuration) return;
+    // Sets the framing and leaves everything else alone: a configuration is a
+    // starting point, not a lock on what the camera may be adjusted to.
+    set((state) => ({
+      cameraConfigurationId: id,
+      surfCam: state.surfCam
+        ? constrainCamera({
+            ...state.surfCam,
+            horizontalFovDeg: configuration.horizontalFovDeg,
+          })
+        : state.surfCam,
+    }));
+  },
+
+  saveMount(name) {
+    let id: string | null = null;
+    set((state) => {
+      const camera = state.surfCam;
+      if (!camera) return state;
+
+      id = `mount-${state.savedMounts.length + 1}-${Date.now().toString(36)}`;
+      const mount: SavedMount = {
+        id,
+        name: name.trim() || `Mount ${state.savedMounts.length + 1}`,
+        ground: { ...camera.ground },
+        mountHeightMeters: camera.mountHeightMeters,
+        bearingDeg: camera.bearingDeg,
+        tiltDeg: camera.tiltDeg,
+        horizontalFovDeg: camera.horizontalFovDeg,
+        configurationId: state.cameraConfigurationId,
+      };
+      return { savedMounts: [...state.savedMounts, mount] };
+    });
+    return id;
+  },
+
+  selectMount(id) {
+    set((state) => {
+      const mount = state.savedMounts.find((entry) => entry.id === id);
+      if (!mount || !state.surfCam) return state;
+      return {
+        cameraConfigurationId: mount.configurationId,
+        surfCam: constrainCamera({
+          ...state.surfCam,
+          ground: { ...mount.ground },
+          mountHeightMeters: mount.mountHeightMeters,
+          bearingDeg: mount.bearingDeg,
+          tiltDeg: mount.tiltDeg,
+          horizontalFovDeg: mount.horizontalFovDeg,
+        }),
+      };
+    });
+  },
+
+  renameMount(id, name) {
+    set((state) => ({
+      savedMounts: state.savedMounts.map((mount) =>
+        mount.id === id ? { ...mount, name: name.trim() || mount.name } : mount,
+      ),
+    }));
+  },
+
+  deleteMount(id) {
+    set((state) => ({
+      savedMounts: state.savedMounts.filter((mount) => mount.id !== id),
+    }));
+  },
+
+  setLookingThrough(looking) {
+    set({ lookingThrough: looking });
   },
 
   setBaseline(baseline) {
@@ -193,6 +449,16 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
     });
   },
 }));
+
+function constrainTarget(target: SightTarget): SightTarget {
+  const height = target.heightMeters;
+  return {
+    ...target,
+    heightMeters: Number.isFinite(height)
+      ? Math.min(MAX_TARGET_HEIGHT_METERS, Math.max(MIN_TARGET_HEIGHT_METERS, height))
+      : MIN_TARGET_HEIGHT_METERS,
+  };
+}
 
 if (import.meta.env.DEV) {
   (globalThis as Record<string, unknown>).__solarHouseStore = useSolarHouseStore;

@@ -3,8 +3,14 @@ import type { GeoPosition } from "./types";
 
 export interface GridSpec {
   centre: LatLng;
-  /** Side length of the square covered area, in metres. */
+  /** East-west span of the covered area, in metres. */
   extentMeters: number;
+  /**
+   * North-south span. Defaults to `extentMeters`, keeping the square the
+   * single-house field has always used; a spread-out row of houses sets this
+   * separately so the field does not pay for empty ground to the north.
+   */
+  extentNorthMeters?: number;
   spacingMeters: number;
 }
 
@@ -22,7 +28,10 @@ export interface Grid {
   cols: number;
   rows: number;
   spacingMeters: number;
+  /** East-west span, in metres. */
   extentMeters: number;
+  /** North-south span, in metres. */
+  extentNorthMeters: number;
   centre: LatLng;
   points: GridPoint[];
 }
@@ -37,16 +46,18 @@ export const DEFAULT_GRID: Pick<GridSpec, "extentMeters" | "spacingMeters"> = {
  * the south-west corner. Heights start at zero and are filled in from terrain.
  */
 export function groundGrid(spec: GridSpec): Grid {
-  const steps = Math.max(1, Math.round(spec.extentMeters / spec.spacingMeters));
-  const cols = steps + 1;
-  const rows = steps + 1;
-  const half = spec.extentMeters / 2;
+  const extentNorth = spec.extentNorthMeters ?? spec.extentMeters;
+  const cols =
+    Math.max(1, Math.round(spec.extentMeters / spec.spacingMeters)) + 1;
+  const rows = Math.max(1, Math.round(extentNorth / spec.spacingMeters)) + 1;
+  const halfEast = spec.extentMeters / 2;
+  const halfNorth = extentNorth / 2;
   const points: GridPoint[] = [];
 
   for (let row = 0; row < rows; row += 1) {
-    const north = -half + row * spec.spacingMeters;
+    const north = -halfNorth + row * spec.spacingMeters;
     for (let col = 0; col < cols; col += 1) {
-      const east = -half + col * spec.spacingMeters;
+      const east = -halfEast + col * spec.spacingMeters;
       const distance = Math.hypot(east, north);
       const bearing = (Math.atan2(east, north) * 180) / Math.PI;
       const at =
@@ -70,6 +81,7 @@ export function groundGrid(spec: GridSpec): Grid {
     rows,
     spacingMeters: spec.spacingMeters,
     extentMeters: spec.extentMeters,
+    extentNorthMeters: extentNorth,
     centre: spec.centre,
     points,
   };

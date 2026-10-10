@@ -32,7 +32,12 @@ interface Props {
   armed: boolean;
   fieldEnabled: boolean;
   fieldPending: boolean;
+  /** The analysed area had to be clipped to stay within the sample budget. */
+  coverageClipped: boolean;
   mode: FieldMode;
+  /** Master overlay opacity, display only. */
+  opacity: number;
+  onOpacity: (opacity: number) => void;
   /** Instantaneous reading for the inspected point, in NOW mode. */
   instant: InstantPoint | null;
   sunAltitudeDeg: number;
@@ -115,6 +120,34 @@ export default function ExposurePanel(props: Props) {
               Direct sunlight at {formatTime(props.date, props.zone.timeZone)}
             </p>
           </div>
+        )}
+
+        {props.fieldEnabled && (
+          <div className="slider-field">
+            <div className="field-row">
+              <label className="field-label" htmlFor="sunlight-opacity">
+                Overlay strength
+              </label>
+              <span className="field-value">{Math.round(props.opacity * 100)}%</span>
+            </div>
+            <input
+              id="sunlight-opacity"
+              className="range"
+              type="range"
+              min={15}
+              max={100}
+              step={5}
+              value={Math.round(props.opacity * 100)}
+              onChange={(event) => props.onOpacity(Number(event.target.value) / 100)}
+            />
+          </div>
+        )}
+
+        {props.fieldEnabled && props.coverageClipped && (
+          <p className="note warn">
+            Sunlight coverage limited. Some areas fall outside the analysed
+            region.
+          </p>
         )}
 
         {props.fieldEnabled && props.fieldPending && (
