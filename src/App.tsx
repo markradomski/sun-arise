@@ -835,7 +835,7 @@ export default function App() {
     // the view itself would put the camera's own edges across its picture.
     const show = appMode === "SURF_CAM" && !lookingThrough;
     frustumRef.current?.update(show && frustumVisible ? surfCam : null);
-  }, [appMode, surfCam, lookingThrough]);
+  }, [appMode, surfCam, lookingThrough, frustumVisible]);
 
   /**
    * Keeps the preview's projection matched to the lens.
