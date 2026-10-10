@@ -33,7 +33,7 @@ import {
   TARGET_SIZES,
   outputResolution,
 } from "../optics/projection";
-import type { Framing, LensComparisonRow } from "../optics/framing";
+import { frameTarget, type Framing, type LensComparisonRow } from "../optics/framing";
 import {
   CUSTOM_TARGET_SIZE_ID,
   type CaptureSettings,
@@ -51,6 +51,7 @@ interface ConfigProps {
   frustumVisible: boolean;
   onFrustumVisible: (visible: boolean) => void;
   savedMounts: SavedMount[];
+  mountSightLines: Record<string, SightLineAnalysis | "PENDING" | "FAILED">;
   onSaveMount: (name: string) => void;
   onSelectMount: (id: string) => void;
   onRenameMount: (id: string, name: string) => void;
@@ -252,6 +253,9 @@ export default function SurfCamPanel(props: Props) {
               onSelect={props.onSelectMount}
               onRename={props.onRenameMount}
               onDelete={props.onDeleteMount}
+              target={props.target}
+              capture={props.capture}
+              sightLines={props.mountSightLines}
             />
           </>
         )}
@@ -574,6 +578,9 @@ function SavedMounts(props: {
   onSelect: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
+  target: SightTarget | null;
+  capture: CaptureSettings;
+  sightLines: Record<string, SightLineAnalysis | "PENDING" | "FAILED">;
 }) {
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -610,6 +617,38 @@ function SavedMounts(props: {
         </button>
       </div>
 
+      {props.target && props.mounts.length > 0 && (
+        <div className="mount-comparison">
+          <p className="field-label">Saved mount comparison · common target</p>
+          <p className="note muted">Each mount has its own terrain sample. Clear terrain does not guarantee visibility through trees, buildings or fences.</p>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", textAlign: "left" }}>
+              <thead><tr><th scope="col">Mount</th><th scope="col">Range</th><th scope="col">Terrain</th><th scope="col">Framing</th></tr></thead>
+              <tbody>
+                {props.mounts.map((mount) => {
+                  const camera: InstallationCamera = { ...mount, id: mount.id, label: mount.name };
+                  const preset = TARGET_SIZES.find((size) => size.id === props.capture.targetSizeId);
+                  const reference = preset
+                    ? { widthMeters: preset.widthMeters, heightMeters: preset.heightMeters }
+                    : { widthMeters: props.capture.customWidthMeters, heightMeters: props.capture.customHeightMeters };
+                  const framing = frameTarget(camera, props.target!, props.capture.resolutionId, reference);
+                  const sight = props.sightLines[mount.id];
+                  const terrain = sight === "PENDING" || sight === undefined ? "Sampling…" : sight === "FAILED" ? "Unavailable" : sight.marginal ? `${classificationLabel(sight)} (marginal)` : classificationLabel(sight);
+                  return (
+                    <tr key={mount.id}>
+                      <th scope="row"><button type="button" className="link" onClick={() => props.onSelect(mount.id)}>{mount.name}</button><span className="mount-detail">{mount.mountHeightMeters.toFixed(1)} m high</span></th>
+                      <td>{(framing.distanceMeters / 1000).toFixed(2)} km</td>
+                      <td>{terrain}{typeof sight === "object" && sight.lineOfSight.blockedAtMeters !== null ? ` · blocked at ${Math.round(sight.lineOfSight.blockedAtMeters)} m` : ""}</td>
+                      <td>{framing.image.inFrame ? `${Math.round(framing.size.widthPixels)} × ${Math.round(framing.size.heightPixels)} px` : "Outside frame"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="note muted">Foreground vegetation and structures: not assessed. Verify proposed positions on site.</p>
+        </div>
+      )}
       {props.mounts.length === 0 ? (
         <p className="note muted">
           Saved positions let you move the camera and come back, or compare two
