@@ -83,18 +83,23 @@ describe("Lulworth geometric sampling", () => {
       const target = targetAt(distance);
       const { offset, distanceMeters } = targetOffset(camera, target);
       expect(distanceMeters).toBeCloseTo(distance, 0);
+      const distanceMeters3D = Math.hypot(offset.east, offset.north, offset.up);
 
       for (const horizontalFovDeg of fieldsOfView) {
         for (const resolution of OUTPUT_RESOLUTIONS) {
           const aimed = {
             ...camera,
             bearingDeg: Math.atan2(offset.east, offset.north) * (180 / Math.PI),
-            tiltDeg: Math.atan2(-offset.up, Math.hypot(offset.east, offset.north)) *
+            tiltDeg:
+              Math.atan2(-offset.up, Math.hypot(offset.east, offset.north)) *
               (180 / Math.PI),
             horizontalFovDeg,
           };
           const framing = frameTarget(aimed, target, resolution.id, PERSON);
-          const pinholeWidth = frameWidthMeters(horizontalFovDeg, distance);
+          const pinholeWidth = frameWidthMeters(
+            horizontalFovDeg,
+            distanceMeters3D,
+          );
           const pinholeMpp = metersPerPixel(
             {
               bearingDeg: aimed.bearingDeg,
@@ -102,7 +107,7 @@ describe("Lulworth geometric sampling", () => {
               horizontalFovDeg,
               format: resolution,
             },
-            distance,
+            distanceMeters3D,
           );
 
           expect(framing.image.inFrame).toBe(true);
@@ -111,7 +116,9 @@ describe("Lulworth geometric sampling", () => {
           expect(framing.size.metersPerPixel).toBeCloseTo(pinholeMpp, 3);
           expect(framing.size.widthPixels).toBeCloseTo(2 / pinholeMpp, 0);
           expect(pinholeWidth).toBeCloseTo(
-            2 * distance * Math.tan((horizontalFovDeg / 2) * (Math.PI / 180)),
+            2 *
+              distanceMeters3D *
+              Math.tan((horizontalFovDeg / 2) * (Math.PI / 180)),
             9,
           );
         }

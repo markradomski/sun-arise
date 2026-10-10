@@ -14,7 +14,12 @@ import { ProbeMarker } from "./cesium/ProbeMarker";
 import { TerrainSampler } from "./cesium/TerrainSampler";
 import { SolarClock } from "./solar/SolarClock";
 import { solarPosition } from "./solar/solarPosition";
-import { civilParts, civilZone, withCivilDate, withCivilMinutes } from "./solar/timezone";
+import {
+  civilParts,
+  civilZone,
+  withCivilDate,
+  withCivilMinutes,
+} from "./solar/timezone";
 import { seasonalDate } from "./solar/seasons";
 import { seasonalPointExposure } from "./solar/seasonalComparison";
 import { pointExposure, sunTimeline } from "./solar/exposure";
@@ -42,7 +47,9 @@ import {
   type SightLineState,
 } from "./optics/sightLineAnalyser";
 import { Geocoder } from "./cesium/geocode";
-import LocationSearch, { type ResolvedLocation } from "./components/LocationSearch";
+import LocationSearch, {
+  type ResolvedLocation,
+} from "./components/LocationSearch";
 import SurfCamPanel from "./components/SurfCamPanel";
 import {
   cameraElevationMeters,
@@ -145,6 +152,7 @@ export default function App() {
   const surfTarget = useSolarHouseStore((s) => s.surfTarget);
   const surfTargetArmed = useSolarHouseStore((s) => s.surfTargetArmed);
   const capture = useSolarHouseStore((s) => s.capture);
+  const savedMounts = useSolarHouseStore((s) => s.savedMounts);
   const [overlayVisible, setOverlayVisible] = useState(true);
 
   /** The reference object the pixel estimates are measured against. */
@@ -169,7 +177,9 @@ export default function App() {
       : null;
   const lookingThrough = useSolarHouseStore((s) => s.lookingThrough);
   const terrainStatus = useSolarHouseStore((s) => s.terrainStatus);
-  const [sightLine, setSightLine] = useState<SightLineState>({ status: "IDLE" });
+  const [sightLine, setSightLine] = useState<SightLineState>({
+    status: "IDLE",
+  });
   const [located, setLocated] = useState<ResolvedLocation | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -253,17 +263,21 @@ export default function App() {
 
     // Open at SITE rather than in orbit, set directly — no fly-from-space.
     let framed = false;
-    const stopInitialFraming = scene.viewer.scene.postRender.addEventListener(() => {
-      if (framed || disposed) return;
-      const state = useSolarHouseStore.getState();
-      const first = state.order[0] ? state.objects[state.order[0]] : undefined;
-      if (!first || !layer.isReady(first.id)) return;
-      if (!placementResolved.has(first.id)) return;
+    const stopInitialFraming = scene.viewer.scene.postRender.addEventListener(
+      () => {
+        if (framed || disposed) return;
+        const state = useSolarHouseStore.getState();
+        const first = state.order[0]
+          ? state.objects[state.order[0]]
+          : undefined;
+        if (!first || !layer.isReady(first.id)) return;
+        if (!placementResolved.has(first.id)) return;
 
-      camera.setTo(DEFAULT_CAMERA_MODE, first.position);
-      framed = true;
-      stopInitialFraming();
-    });
+        camera.setTo(DEFAULT_CAMERA_MODE, first.position);
+        framed = true;
+        stopInitialFraming();
+      },
+    );
 
     const sampler = new TerrainSampler(
       () => scene.getTerrainProvider(),
@@ -403,7 +417,10 @@ export default function App() {
           return;
         }
 
-        store.setSite({ latitude: location.latitude, longitude: location.longitude });
+        store.setSite({
+          latitude: location.latitude,
+          longitude: location.longitude,
+        });
 
         // Move the selected house if there is one, otherwise drop a new one.
         const id = store.selectedId ?? store.addHouse(location);
@@ -420,7 +437,8 @@ export default function App() {
       .then(({ status, providerName }) => {
         if (disposed) return;
         useSolarHouseStore.getState().setTerrainStatus(status, providerName);
-        for (const id of useSolarHouseStore.getState().order) void settlePlacement(id);
+        for (const id of useSolarHouseStore.getState().order)
+          void settlePlacement(id);
       })
       .catch((error) => {
         console.error(error);
@@ -428,7 +446,8 @@ export default function App() {
           useSolarHouseStore
             .getState()
             .setTerrainStatus("UNAVAILABLE", "terrain initialisation failed");
-          for (const id of useSolarHouseStore.getState().order) void settlePlacement(id);
+          for (const id of useSolarHouseStore.getState().order)
+            void settlePlacement(id);
         }
       });
 
@@ -479,8 +498,8 @@ export default function App() {
   // did not convey sunlight vs shade any better than the cast shadow itself.
   // Falls back to the current site rather than the initial one, so civil time
   // and sun position still follow the map after the selection is cleared.
-  const sunOrigin = selected?.position ??
-    (site ? { ...site, height: 0 } : INITIAL_SITE);
+  const sunOrigin =
+    selected?.position ?? (site ? { ...site, height: 0 } : INITIAL_SITE);
 
   // Civil time follows the *site*, not the browser. The clock stores an
   // absolute instant; everything shown to the user is that instant expressed
@@ -570,7 +589,9 @@ export default function App() {
     // A field computed from inputs that have since changed is retired instead,
     // rather than left on screen describing a placement that no longer exists.
     if (!fieldEnabled) {
-      setField((current) => (current?.signature === signature ? current : null));
+      setField((current) =>
+        current?.signature === signature ? current : null,
+      );
       setFieldPending(false);
       // Attaching an imagery layer makes Cesium rebuild the tiles it covers.
       // Doing that once during initial load, while the globe is still
@@ -610,7 +631,10 @@ export default function App() {
       const fallbackHeight = houseList[0].position.height;
 
       if (provider && status === "READY") {
-        const heights = await sampleElevations(provider, grid.points.map((p) => p.position));
+        const heights = await sampleElevations(
+          provider,
+          grid.points.map((p) => p.position),
+        );
         if (cancelled) return;
         grid.points.forEach((point, index) => {
           point.position.height = heights[index] ?? fallbackHeight;
@@ -625,7 +649,11 @@ export default function App() {
       const timeline = sunTimeline(bounds.centre, date, {
         utcOffsetHours: zone.offsetHours,
       });
-      const result = exposureField(positions, houseList.map(occluderFor), timeline);
+      const result = exposureField(
+        positions,
+        houseList.map(occluderFor),
+        timeline,
+      );
       // Recomputed against the active timeline rather than stored, so a date or
       // season change moves both sides together.
       const baselineResult = baseline
@@ -695,14 +723,23 @@ export default function App() {
 
     // An absolute deadline, so a stream of clock ticks throttles to a steady
     // cadence instead of debouncing into never running.
-    const due = lastInstantRef.current + INSTANT_INTERVAL_MS - performance.now();
+    const due =
+      lastInstantRef.current + INSTANT_INTERVAL_MS - performance.now();
     if (due <= 0) {
       compute();
       return;
     }
     const timer = window.setTimeout(compute, due);
     return () => window.clearTimeout(timer);
-  }, [fieldMode, fieldEnabled, field, houseList, date, zone.offsetHours, instantKey]);
+  }, [
+    fieldMode,
+    fieldEnabled,
+    field,
+    houseList,
+    date,
+    zone.offsetHours,
+    instantKey,
+  ]);
 
   // One owner of the overlay image, so the two modes cannot race each other.
   useEffect(() => {
@@ -731,14 +768,17 @@ export default function App() {
         ? matched && instant
           ? {
               pointCount: instant.result.pointCount,
-              colourAt: (i: number) => instantColour(instant.result.strength[i]),
-              opacityAt: (i: number) => instantOpacity(instant.result.strength[i]),
+              colourAt: (i: number) =>
+                instantColour(instant.result.strength[i]),
+              opacityAt: (i: number) =>
+                instantOpacity(instant.result.strength[i]),
             }
           : null
         : {
             pointCount: field.result.pointCount,
             colourAt: (i: number) => colourForMinutes(field.result.minutes[i]),
-            opacityAt: (i: number) => opacityForMinutes(field.result.minutes[i]),
+            opacityAt: (i: number) =>
+              opacityForMinutes(field.result.minutes[i]),
           };
     if (!source) return;
 
@@ -836,7 +876,10 @@ export default function App() {
       },
       targetGround: surfTarget.ground,
       targetHeightMeters: surfTarget.heightMeters,
-      status: sightLine.status === "READY" ? sightLine.analysis.classification : "PENDING",
+      status:
+        sightLine.status === "READY"
+          ? sightLine.analysis.classification
+          : "PENDING",
     });
   }, [appMode, surfCam, surfTarget, sightLine]);
 
@@ -844,7 +887,8 @@ export default function App() {
   useEffect(() => {
     if (!surfTargetArmed) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") useSolarHouseStore.getState().armSurfTarget(false);
+      if (event.key === "Escape")
+        useSolarHouseStore.getState().armSurfTarget(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -908,7 +952,10 @@ export default function App() {
       },
       point:
         baselinePointMinutes !== null && exposure
-          ? { baseline: baselinePointMinutes, current: exposure.directSunMinutes }
+          ? {
+              baseline: baselinePointMinutes,
+              current: exposure.directSunMinutes,
+            }
           : null,
     };
   }, [field, baselinePointMinutes, exposure]);
@@ -1002,7 +1049,8 @@ export default function App() {
           ? {
               ...current,
               elevationMeters: elevation ?? null,
-              elevationStatus: elevation === undefined ? "UNAVAILABLE" : "READY",
+              elevationStatus:
+                elevation === undefined ? "UNAVAILABLE" : "READY",
             }
           : current,
       );
@@ -1154,13 +1202,15 @@ export default function App() {
     }
     if (elevation === undefined) return;
 
-    useSolarHouseStore.getState().setSurfCam(
-      createCamera(
-        "surf-cam-1",
-        { ...position, height: elevation },
-        { label: "Proposed Lulworth position", ...STARTUP_SITE.mount },
-      ),
-    );
+    useSolarHouseStore
+      .getState()
+      .setSurfCam(
+        createCamera(
+          "surf-cam-1",
+          { ...position, height: elevation },
+          { label: "Proposed Lulworth position", ...STARTUP_SITE.mount },
+        ),
+      );
 
     if (frame) {
       // Stand off to the south so the mount and its frustum are both in
@@ -1180,8 +1230,7 @@ export default function App() {
 
     const site = store.site;
     const target: GeoPosition =
-      selected?.position ??
-      (site ? { ...site, height: 0 } : INITIAL_SITE);
+      selected?.position ?? (site ? { ...site, height: 0 } : INITIAL_SITE);
 
     cameraRef.current?.flyTo(mode, target);
   };
@@ -1190,14 +1239,21 @@ export default function App() {
     const scene = sceneRef.current;
     const site = useSolarHouseStore.getState().site ?? INITIAL_SITE;
     const height = scene
-      ? loadedHeight(scene.globe, site.latitude, site.longitude) ?? 0
+      ? (loadedHeight(scene.globe, site.latitude, site.longitude) ?? 0)
       : 0;
-    const id = addHouse({ latitude: site.latitude, longitude: site.longitude, height });
+    const id = addHouse({
+      latitude: site.latitude,
+      longitude: site.longitude,
+      height,
+    });
     void settleRef.current?.(id);
   };
 
   const handleHeading = (heading: number) => {
-    if (selected) updateObject(selected.id, { rotation: { ...selected.rotation, heading } });
+    if (selected)
+      updateObject(selected.id, {
+        rotation: { ...selected.rotation, heading },
+      });
   };
 
   return (
@@ -1273,43 +1329,47 @@ export default function App() {
         onCameraMode={handleCameraMode}
       >
         {appMode === "SOLAR" ? (
-        <ExposurePanel
-          exposure={exposure}
-          seasonal={seasonalPoint}
-          comparison={comparison}
-          hasBaseline={baseline !== null}
-          baselineDriftMeters={baselineDriftMeters}
-          zone={zone}
-          armed={probeArmed}
-          fieldEnabled={fieldEnabled}
-          fieldPending={fieldPending}
-          coverageClipped={field?.clipped ?? false}
-          mode={fieldMode}
-          opacity={fieldOpacity}
-          onOpacity={(value) =>
-            useSolarHouseStore.getState().setFieldOpacity(value)
-          }
-          instant={instantProbe}
-          sunAltitudeDeg={solar.altitudeDeg}
-          date={date}
-          onMode={(mode) => useSolarHouseStore.getState().setFieldMode(mode)}
-          onSetBaseline={() => {
-            const store = useSolarHouseStore.getState();
-            const houses = Object.values(store.objects).filter(
-              (o) => o.type === "house",
-            );
-            store.setBaseline(houses.length > 0 ? houses.map(occluderFor) : null);
-          }}
-          onClearBaseline={() => useSolarHouseStore.getState().setBaseline(null)}
-          onArm={() => useSolarHouseStore.getState().armProbe(true)}
-          onToggleField={() =>
-            useSolarHouseStore.getState().setFieldEnabled(!fieldEnabled)
-          }
-          onClear={() => {
-            useSolarHouseStore.getState().setProbe(null);
-            useSolarHouseStore.getState().armProbe(false);
-          }}
-        />
+          <ExposurePanel
+            exposure={exposure}
+            seasonal={seasonalPoint}
+            comparison={comparison}
+            hasBaseline={baseline !== null}
+            baselineDriftMeters={baselineDriftMeters}
+            zone={zone}
+            armed={probeArmed}
+            fieldEnabled={fieldEnabled}
+            fieldPending={fieldPending}
+            coverageClipped={field?.clipped ?? false}
+            mode={fieldMode}
+            opacity={fieldOpacity}
+            onOpacity={(value) =>
+              useSolarHouseStore.getState().setFieldOpacity(value)
+            }
+            instant={instantProbe}
+            sunAltitudeDeg={solar.altitudeDeg}
+            date={date}
+            onMode={(mode) => useSolarHouseStore.getState().setFieldMode(mode)}
+            onSetBaseline={() => {
+              const store = useSolarHouseStore.getState();
+              const houses = Object.values(store.objects).filter(
+                (o) => o.type === "house",
+              );
+              store.setBaseline(
+                houses.length > 0 ? houses.map(occluderFor) : null,
+              );
+            }}
+            onClearBaseline={() =>
+              useSolarHouseStore.getState().setBaseline(null)
+            }
+            onArm={() => useSolarHouseStore.getState().armProbe(true)}
+            onToggleField={() =>
+              useSolarHouseStore.getState().setFieldEnabled(!fieldEnabled)
+            }
+            onClear={() => {
+              useSolarHouseStore.getState().setProbe(null);
+              useSolarHouseStore.getState().armProbe(false);
+            }}
+          />
         ) : (
           <SurfCamPanel
             camera={surfCam}
@@ -1317,11 +1377,15 @@ export default function App() {
             lookingThrough={lookingThrough}
             terrainReady={terrainStatus === "READY"}
             onArm={() => useSolarHouseStore.getState().armSurfCam(true)}
-            onChange={(patch) => useSolarHouseStore.getState().updateSurfCam(patch)}
+            onChange={(patch) =>
+              useSolarHouseStore.getState().updateSurfCam(patch)
+            }
             onReset={() => {
               const store = useSolarHouseStore.getState();
               if (store.surfCam) {
-                store.setSurfCam(createCamera(store.surfCam.id, store.surfCam.ground));
+                store.setSurfCam(
+                  createCamera(store.surfCam.id, store.surfCam.ground),
+                );
               }
             }}
             onClear={() => {
@@ -1335,7 +1399,9 @@ export default function App() {
             target={surfTarget}
             targetArmed={surfTargetArmed}
             sightLine={sightLine}
-            onArmTarget={() => useSolarHouseStore.getState().armSurfTarget(true)}
+            onArmTarget={() =>
+              useSolarHouseStore.getState().armSurfTarget(true)
+            }
             onTargetHeight={(heightMeters) =>
               useSolarHouseStore.getState().updateSurfTarget({ heightMeters })
             }
@@ -1357,9 +1423,32 @@ export default function App() {
             }
             capture={capture}
             overlayVisible={overlayVisible}
-            onCapture={(patch) => useSolarHouseStore.getState().setCapture(patch)}
+            onCapture={(patch) =>
+              useSolarHouseStore.getState().setCapture(patch)
+            }
             onAimAtTarget={handleAimAtTarget}
             onOverlayVisible={setOverlayVisible}
+            onSaveMount={(name) =>
+              useSolarHouseStore.getState().saveMount(name)
+            }
+            onSelectMount={(id) =>
+              useSolarHouseStore.getState().selectMount(id)
+            }
+            onRenameMount={(id, name) =>
+              useSolarHouseStore.getState().renameMount(id, name)
+            }
+            onDeleteMount={(id) =>
+              useSolarHouseStore.getState().deleteMount(id)
+            }
+            configurationId={""}
+            onConfiguration={function (id: string): void {
+              throw new Error("Function not implemented.");
+            }}
+            frustumVisible={false}
+            onFrustumVisible={function (visible: boolean): void {
+              throw new Error("Function not implemented.");
+            }}
+            savedMounts={useSolarHouseStore.getState().savedMounts}
           />
         )}
       </Controls>

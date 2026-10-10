@@ -60,8 +60,18 @@ export interface TargetSizePreset {
 export const TARGET_SIZES: TargetSizePreset[] = [
   { id: "detail", label: "1 m · wave detail", widthMeters: 1, heightMeters: 1 },
   { id: "person", label: "2 m · person", widthMeters: 2, heightMeters: 2 },
-  { id: "section", label: "5 m · wave section", widthMeters: 5, heightMeters: 3 },
-  { id: "feature", label: "10 m · surf feature", widthMeters: 10, heightMeters: 4 },
+  {
+    id: "section",
+    label: "5 m · wave section",
+    widthMeters: 5,
+    heightMeters: 3,
+  },
+  {
+    id: "feature",
+    label: "10 m · surf feature",
+    widthMeters: 10,
+    heightMeters: 4,
+  },
 ];
 
 export const DEFAULT_TARGET_SIZE_ID = "person";
@@ -237,7 +247,10 @@ export function projectObjectSize(
  * not a resolving figure: two features one pixel apart are not two features
  * you can tell apart.
  */
-export function metersPerPixel(setup: ImagingSetup, distanceMeters: number): number {
+export function metersPerPixel(
+  setup: ImagingSetup,
+  distanceMeters: number,
+): number {
   if (distanceMeters <= 0) return 0;
   const halfWidth = Math.tan((setup.horizontalFovDeg / 2) * DEG);
   if (!(halfWidth > 0) || !(setup.format.widthPixels > 0)) return 0;
@@ -301,9 +314,13 @@ export function aimAtTarget(
 
   // Directly above or below: the bearing is undefined, so the camera keeps
   // the one it has and only the tilt moves.
-  const bearingDeg =
-    horizontal > 0 ? bearingOf(offset) : (options.currentBearingDeg ?? initialBearingDeg);
+  const sameLocation =
+    camera.position.latitude === target.position.latitude &&
+    camera.position.longitude === target.position.longitude;
 
+  const bearingDeg = sameLocation
+    ? (options.currentBearingDeg ?? initialBearingDeg)
+    : bearingOf(offset);
   const requestedTiltDeg = tiltOf(offset);
   const tiltDeg = clamp(requestedTiltDeg, MIN_TILT_DEG, MAX_TILT_DEG);
 

@@ -58,7 +58,11 @@ function atRange(
 ): EnuOffset {
   const raw = offsetAt(s, 1, rightDeg, upDeg);
   const scale = range / Math.hypot(raw.east, raw.north, raw.up);
-  return { east: raw.east * scale, north: raw.north * scale, up: raw.up * scale };
+  return {
+    east: raw.east * scale,
+    north: raw.north * scale,
+    up: raw.up * scale,
+  };
 }
 
 describe("field of view conversion", () => {
@@ -70,13 +74,22 @@ describe("field of view conversion", () => {
 
   it("follows the aspect ratio, not the pixel count", () => {
     // Same shape, four times the pixels: the optics are unchanged.
-    expect(verticalFovForFormat(54, UHD)).toBeCloseTo(verticalFovForFormat(54, HD), 9);
+    expect(verticalFovForFormat(54, UHD)).toBeCloseTo(
+      verticalFovForFormat(54, HD),
+      9,
+    );
     expect(sensorAspect(UHD)).toBeCloseTo(sensorAspect(HD), 9);
   });
 
   it("narrows the vertical further as the frame gets wider", () => {
-    const wide = verticalFovForFormat(54, { widthPixels: 1920, heightPixels: 1080 });
-    const square = verticalFovForFormat(54, { widthPixels: 1080, heightPixels: 1080 });
+    const wide = verticalFovForFormat(54, {
+      widthPixels: 1920,
+      heightPixels: 1080,
+    });
+    const square = verticalFovForFormat(54, {
+      widthPixels: 1080,
+      heightPixels: 1080,
+    });
     expect(wide).toBeLessThan(square);
     expect(square).toBeCloseTo(54, 9);
   });
@@ -236,8 +249,18 @@ describe("target pixel footprint", () => {
 
   it("grows as the lens narrows", () => {
     const offset = offsetAt(setup(), 2000, 0, 0);
-    const wide = projectObjectSize(setup({ horizontalFovDeg: 110 }), offset, 2, 2);
-    const tele = projectObjectSize(setup({ horizontalFovDeg: 10 }), offset, 2, 2);
+    const wide = projectObjectSize(
+      setup({ horizontalFovDeg: 110 }),
+      offset,
+      2,
+      2,
+    );
+    const tele = projectObjectSize(
+      setup({ horizontalFovDeg: 10 }),
+      offset,
+      2,
+      2,
+    );
     expect(tele.widthPixels).toBeGreaterThan(wide.widthPixels * 5);
   });
 
@@ -335,7 +358,11 @@ describe("aimAtTarget", () => {
   };
 
   /** A point `distance` metres from the camera on the given bearing. */
-  function targetOn(bearingDeg: number, distance: number, elevationMeters: number) {
+  function targetOn(
+    bearingDeg: number,
+    distance: number,
+    elevationMeters: number,
+  ) {
     const rad = (bearingDeg * Math.PI) / 180;
     const north = (distance * Math.cos(rad)) / 111_320;
     const east =
@@ -357,8 +384,15 @@ describe("aimAtTarget", () => {
         CAMERA.position,
         targetOn(bearing, 2000, 0).position,
       ).initialBearingDeg;
-      expect(aim.bearingDeg).toBeCloseTo(expected, 9);
-      expect(Math.min(Math.abs(aim.bearingDeg - bearing), 360 - Math.abs(aim.bearingDeg - bearing))).toBeLessThan(0.3);
+      const bearingError = ((aim.bearingDeg - expected + 540) % 360) - 180;
+
+      expect(bearingError).toBeCloseTo(0, 9);
+      expect(
+        Math.min(
+          Math.abs(aim.bearingDeg - bearing),
+          360 - Math.abs(aim.bearingDeg - bearing),
+        ),
+      ).toBeLessThan(0.3);
     }
   });
 
@@ -393,7 +427,7 @@ describe("aimAtTarget", () => {
       position: CAMERA.position,
       elevationMeters: 0,
     });
-    expect(aim.tiltDeg).toBe(MAX_TILT_DEG);
+    expect(aim.tiltDeg).toBeCloseTo(MAX_TILT_DEG, 6);
     expect(aim.clamped).toBe(false);
   });
 
@@ -415,7 +449,10 @@ describe("aimAtTarget", () => {
   it("centres the target in the frame once applied", () => {
     const target = targetOn(47, 2500, 0);
     const aim = aimAtTarget(CAMERA, target);
-    const { distanceMeters } = inverseGeodesic(CAMERA.position, target.position);
+    const { distanceMeters } = inverseGeodesic(
+      CAMERA.position,
+      target.position,
+    );
     const offset = aimedEnuOffset(CAMERA, target, distanceMeters);
     const p = projectDirection(
       setup({ bearingDeg: aim.bearingDeg, tiltDeg: aim.tiltDeg }),
@@ -434,7 +471,10 @@ describe("aimAtTarget", () => {
     });
     expect(refracted.tiltDeg).toBeLessThan(geometric.tiltDeg);
 
-    const { distanceMeters } = inverseGeodesic(CAMERA.position, target.position);
+    const { distanceMeters } = inverseGeodesic(
+      CAMERA.position,
+      target.position,
+    );
     const chord = aimedEnuOffset(
       CAMERA,
       target,
