@@ -3,32 +3,70 @@
  *
  * The overlay is a rectangular raster, and its edge against the satellite
  * imagery reads as a tile boundary rather than as analysis. This fades the
- * outer band away, measuring distance with a rounded-square metric so the
- * corners vanish first instead of leaving a visible square.
+ * outer band away, with corners rounded so no straight edge survives.
+ *
+ * The fade is a **fixed distance in metres**, not a fraction of the field.
+ * When it was proportional, an adaptive field covering houses a few hundred
+ * metres apart faded over tens of metres on its long side while a 60 m field
+ * faded over six, so the same analysis looked different at different zooms and
+ * a house near the edge could dissolve entirely.
  *
  * It is a function of position only. Two cells the same distance from the
  * boundary get the same alpha whatever their exposure, so the mask can never
  * be mistaken for, or interfere with, the hours the ramp encodes.
  */
 
-/** Fraction of the half-width held at full opacity before the fade begins. */
-export const FEATHER_START = 0.78;
-
-/** Exponent of the distance metric: 2 is a circle, large values a square. */
-const EDGE_ROUNDNESS = 4;
+/**
+ * Width of the fade, in metres.
+ *
+ * Eight matches what the old proportional feather produced on the original
+ * 60 m field, which is the appearance this is calibrated against.
+ */
+export const DEFAULT_FEATHER_METERS = 8;
 
 /**
- * Alpha multiplier at a point in the field, where `u` and `v` run 0 to 1
- * across its width and height. 1 keeps the overlay's own opacity, 0 is clear.
+ * Alpha multiplier at a point, measured in metres east and north of the
+ * field's centre. 1 keeps the overlay's own opacity, 0 is clear.
+ *
+ * The field is treated as a rectangle inset by the feather distance: inside
+ * that inner rectangle the overlay is solid, and beyond it the alpha falls to
+ * zero over `featherMeters`. Distance to the inner rectangle is measured
+ * radially at the corners, which is what rounds them.
  */
-export function featherAlpha(u: number, v: number): number {
-  const x = Math.abs(u * 2 - 1);
-  const y = Math.abs(v * 2 - 1);
-  const distance = (x ** EDGE_ROUNDNESS + y ** EDGE_ROUNDNESS) ** (1 / EDGE_ROUNDNESS);
-  return 1 - smoothstep(FEATHER_START, 1, distance);
+export function featherAlpha(
+  eastMeters: number,
+  northMeters: number,
+  halfEastMeters: number,
+  halfNorthMeters: number,
+  featherMeters: number = DEFAULT_FEATHER_METERS,
+): number {
+  // A field narrower than two feathers has no solid core to protect, so the
+  // fade shrinks to fit rather than inverting the rectangle.
+  const feather = Math.max(
+    0,
+    Math.min(featherMeters, halfEastMeters, halfNorthMeters),
+  );
+
+  const innerEast = halfEastMeters - feather;
+  const innerNorth = halfNorthMeters - feather;
+
+  const overEast = Math.abs(eastMeters) - innerEast;
+  const overNorth = Math.abs(northMeters) - innerNorth;
+
+  if (feather <= 0) {
+    return overEast <= 0 && overNorth <= 0 ? 1 : 0;
+  }
+
+  // Signed distance from the inner rectangle: negative inside, positive out.
+  const outside = Math.hypot(Math.max(overEast, 0), Math.max(overNorth, 0));
+  const inside = Math.min(Math.max(overEast, overNorth), 0);
+  const distance = outside + inside;
+
+  return 1 - smoothstep(0, feather, distance);
 }
 
 function smoothstep(edge0: number, edge1: number, value: number): number {
+  if (edge1 <= edge0) return value < edge1 ? 0 : 1;
   const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
 }

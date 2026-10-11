@@ -43,3 +43,18 @@ function mix(
 function rgbCss(rgb: [number, number, number]): string {
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
+
+/**
+ * How solid the overlay should be at a given instantaneous strength.
+ *
+ * Same reasoning as the hours ramp: shadow is the answer the user is looking
+ * for and stays solid, while broad sunlit ground is drawn lightly so the
+ * satellite image still reads through it.
+ */
+export function instantOpacity(strength: number): number {
+  const t = Math.min(1, Math.max(0, strength));
+  return SHADE_OPACITY + (SUN_OPACITY - SHADE_OPACITY) * t;
+}
+
+const SHADE_OPACITY = 1;
+const SUN_OPACITY = 0.4;

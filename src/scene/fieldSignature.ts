@@ -18,11 +18,14 @@ export interface FieldInputs {
  * would resample terrain, rebuild the field and tear the panel down with it.
  */
 export function fieldSignature(inputs: FieldInputs): string {
+  // Sorted, because occlusion is the union of the houses: the same scene in a
+  // different order is the same analysis, and must not look like a change.
   const houses = inputs.houses
     .map(
       (house) =>
         `${house.id}:${place(house.position.latitude)},${place(house.position.longitude)},${house.position.height.toFixed(2)},${house.rotation.heading.toFixed(2)},${house.scale}`,
     )
+    .sort()
     .join("|");
 
   const baseline =
