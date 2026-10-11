@@ -13,7 +13,7 @@ import {
   verticalFovDeg,
   type InstallationCamera,
 } from "../optics/camera";
-import { horizonDistanceMeters } from "../optics/geodesy";
+import { horizonDistanceMeters, inverseGeodesic, curvatureDropMeters } from "../optics/geodesy";
 import { isProposedLulworthPosition } from "../optics/camera";
 import { formatCoordinates } from "../scene/location";
 import {
@@ -567,6 +567,53 @@ export default function SurfCamPanel(props: Props) {
   );
 }
 
+interface PlannedObstruction {
+  id: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  heightMeters: number;
+}
+
+/** Tests a cylindrical approximation against the already-sampled sight line.
+ * Height is above local terrain; uncertainty grows with sample spacing.
+ */
+function obstructionHits(
+  sight: SightLineAnalysis | "PENDING" | "FAILED" | undefined,
+  mount: SavedMount,
+  target: SightTarget,
+  obstacles: PlannedObstruction[],
+): string[] {
+  if (!sight || typeof sight !== "object") return [];
+  const total = sight.distanceMeters;
+  if (total <= 0) return [];
+  const bearing = inverseGeodesic(mount.ground, target.ground).initialBearingDeg * Math.PI / 180;
+  const hits: string[] = [];
+  for (const obstacle of obstacles) {
+    const point = inverseGeodesic(mount.ground, obstacle);
+    const delta = point.initialBearingDeg * Math.PI / 180 - bearing;
+    const along = point.distanceMeters * Math.cos(delta);
+    const across = Math.abs(point.distanceMeters * Math.sin(delta));
+    if (along <= 0 || along >= total || across > obstacle.radiusMeters) continue;
+    const samples = sight.profile.samples;
+    const nextIndex = samples.findIndex((sample) => sample.distanceMeters >= along);
+    if (nextIndex < 1) continue;
+    const before = samples[nextIndex - 1];
+    const after = samples[nextIndex];
+    if (before.terrainElevationMeters === undefined || after.terrainElevationMeters === undefined) {
+      hits.push(obstacle.name + " (terrain unknown)");
+      continue;
+    }
+    const t = (along - before.distanceMeters) / Math.max(0.001, after.distanceMeters - before.distanceMeters);
+    const terrain = before.terrainElevationMeters + t * (after.terrainElevationMeters - before.terrainElevationMeters);
+    const apparentTop = terrain + obstacle.heightMeters - curvatureDropMeters(along, sight.refractionK);
+    const line = sight.observerElevationMeters + (sight.targetElevationMeters - curvatureDropMeters(total, sight.refractionK) - sight.observerElevationMeters) * (along / total);
+    if (apparentTop >= line - 2) hits.push(obstacle.name);
+  }
+  return hits;
+}
+
 /**
  * Mounting positions kept side by side.
  *
@@ -588,6 +635,18 @@ function SavedMounts(props: {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const nameId = useId();
+  const [obstacles, setObstacles] = useState<PlannedObstruction[]>([]);
+  const [obstacleName, setObstacleName] = useState("Tree");
+  const [obstacleLat, setObstacleLat] = useState("");
+  const [obstacleLon, setObstacleLon] = useState("");
+  const [obstacleHeight, setObstacleHeight] = useState(8);
+  const [obstacleRadius, setObstacleRadius] = useState(3);
+  const addObstruction = () => {
+    const latitude = Number(obstacleLat);
+    const longitude = Number(obstacleLon);
+    if (!obstacleLat.trim() || !obstacleLon.trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || !Number.isFinite(obstacleHeight) || obstacleHeight <= 0 || !Number.isFinite(obstacleRadius) || obstacleRadius <= 0) return;
+    setObstacles((previous) => [...previous, { id: Date.now(), name: obstacleName.trim() || "Obstruction", latitude, longitude, heightMeters: obstacleHeight, radiusMeters: obstacleRadius }]);
+  };
 
   // Conservative screening: only confirmed clear, non-marginal terrain and
   // an in-frame target qualify. Pixel width breaks ties; it is not proof
@@ -601,7 +660,8 @@ function SavedMounts(props: {
     const framing = frameTarget(camera, props.target!, props.capture.resolutionId, reference);
     const sight = props.sightLines[mount.id];
     const clear = typeof sight === "object" && sight.classification === "CLEAR" && !sight.marginal;
-    return { mount, framing, sight, clear, viable: clear && framing.image.inFrame };
+    const obstructionHitsList = obstructionHits(sight, mount, props.target!, obstacles);
+    return { mount, framing, sight, clear, obstructionHitsList, viable: clear && framing.image.inFrame && obstructionHitsList.length === 0 };
   }) : [];
   const ranked = [...candidates].sort((a, b) =>
     Number(b.viable) - Number(a.viable) ||
@@ -641,11 +701,24 @@ function SavedMounts(props: {
 
       {props.target && props.mounts.length > 0 && (
         <div className="mount-comparison">
+          <div className="mount-recommendation">
+            <p className="field-label">Manually model foreground obstructions</p>
+            <p className="note muted">Add approximate positions (latitude/longitude), height above ground and horizontal radius for trees, roofs or fences. These are simplified cylindrical screening volumes, not surveyed geometry.</p>
+            <div className="obstruction-fields">
+              <label>Name<input value={obstacleName} onChange={(e) => setObstacleName(e.target.value)} /></label>
+              <label>Latitude<input type="number" step="any" placeholder="-41.00" value={obstacleLat} onChange={(e) => setObstacleLat(e.target.value)} /></label>
+              <label>Longitude<input type="number" step="any" placeholder="147.07" value={obstacleLon} onChange={(e) => setObstacleLon(e.target.value)} /></label>
+              <label>Height (m)<input type="number" min="0.1" step="0.5" value={obstacleHeight} onChange={(e) => setObstacleHeight(Number(e.target.value))} /></label>
+              <label>Radius (m)<input type="number" min="0.1" step="0.5" value={obstacleRadius} onChange={(e) => setObstacleRadius(Number(e.target.value))} /></label>
+            </div>
+            <button type="button" className="secondary" onClick={addObstruction}>Add obstruction</button>
+            {obstacles.map((item) => <p className="note" key={item.id}>{item.name} · {item.heightMeters} m tall · {item.radiusMeters} m radius <button type="button" className="link" onClick={() => setObstacles((previous) => previous.filter((entry) => entry.id !== item.id))}>Remove</button></p>)}
+          </div>
           <p className="field-label">Saved mount comparison · common target</p>
           <p className="note muted">Each mount has its own terrain sample. Clear terrain does not guarantee visibility through trees, buildings or fences.</p>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", textAlign: "left" }}>
-              <thead><tr><th scope="col">Mount</th><th scope="col">Range</th><th scope="col">Terrain</th><th scope="col">Framing</th></tr></thead>
+              <thead><tr><th scope="col">Mount</th><th scope="col">Range</th><th scope="col">Terrain</th><th scope="col">Structures</th><th scope="col">Framing</th></tr></thead>
               <tbody>
                 {props.mounts.map((mount) => {
                   const camera: InstallationCamera = { ...mount, id: mount.id, label: mount.name };
@@ -655,12 +728,14 @@ function SavedMounts(props: {
                     : { widthMeters: props.capture.customWidthMeters, heightMeters: props.capture.customHeightMeters };
                   const framing = frameTarget(camera, props.target!, props.capture.resolutionId, reference);
                   const sight = props.sightLines[mount.id];
+                  const blockedBy = obstructionHits(sight, mount, props.target!, obstacles);
                   const terrain = sight === "PENDING" || sight === undefined ? "Sampling…" : sight === "FAILED" ? "Unavailable" : sight.marginal ? `${classificationLabel(sight)} (marginal)` : classificationLabel(sight);
                   return (
                     <tr key={mount.id}>
                       <th scope="row"><button type="button" className="link" onClick={() => props.onSelect(mount.id)}>{mount.name}</button><span className="mount-detail">{mount.mountHeightMeters.toFixed(1)} m high</span></th>
                       <td>{(framing.distanceMeters / 1000).toFixed(2)} km</td>
                       <td>{terrain}{typeof sight === "object" && sight.lineOfSight.blockedAtMeters !== null ? ` · blocked at ${Math.round(sight.lineOfSight.blockedAtMeters)} m` : ""}</td>
+                      <td>{blockedBy.length ? `Potentially blocked: ${blockedBy.join(", ")}` : obstacles.length ? "No modeled intersection" : "Not assessed"}</td>
                       <td>{framing.image.inFrame ? `${Math.round(framing.size.widthPixels)} × ${Math.round(framing.size.heightPixels)} px` : "Outside frame"}</td>
                     </tr>
                   );
@@ -672,13 +747,13 @@ function SavedMounts(props: {
             <div className="mount-recommendation" aria-live="polite">
               <p className="field-label">Provisional preferred mount</p>
               <p><strong>{preferred.mount.name}</strong> · {preferred.mount.mountHeightMeters.toFixed(1)} m above terrain · bearing {preferred.mount.bearingDeg.toFixed(0)}° · tilt {preferred.mount.tiltDeg.toFixed(0)}° · {preferred.mount.horizontalFovDeg.toFixed(0)}° horizontal FOV · {props.capture.resolutionId.toUpperCase()}</p>
-              <p className="note">The target is in frame at approximately {Math.round(preferred.framing.size.widthPixels)} px wide and sampled terrain is clear. {ranked.filter((entry) => entry.viable).length} of {ranked.length} saved mounts meet both screening checks. Ranking favours larger target image size among those passing.</p>
+              <p className="note">The target is in frame at approximately {Math.round(preferred.framing.size.widthPixels)} px wide and sampled terrain is clear. {ranked.filter((entry) => entry.viable).length} of {ranked.length} saved mounts meet terrain, framing and modeled obstruction checks. Ranking favours larger target image size among those passing.</p>
               <button type="button" className="secondary" onClick={() => props.onSelect(preferred.mount.id)}>Inspect preferred mount</button>
             </div>
           ) : (
-            <p className="note warn">No saved mount currently has both confirmed clear terrain and the target inside its image. Adjust positions, aim or FOV, or wait for terrain sampling.</p>
+            <p className="note warn">No saved mount currently passes clear terrain, in-frame target and modeled obstruction checks. Adjust positions, aim or FOV, or wait for terrain sampling.</p>
           )}
-          <p className="note muted">Provisional geometry-only screening, not an installation approval. Foreground vegetation, buildings, mounting safety, weather, optical sharpness and network/power availability have not been verified. Inspect the site before purchasing hardware.</p>
+          <p className="note muted">Provisional geometry-only screening, not an installation approval. Unmodeled vegetation, buildings, mounting safety, weather, optical sharpness and network/power availability have not been verified. Inspect the site before purchasing hardware.</p>
         </div>
       )}
       {props.mounts.length === 0 ? (
