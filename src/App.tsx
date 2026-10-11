@@ -1333,6 +1333,10 @@ export default function App() {
       <Controls
         siteName={STARTUP_SITE.name}
         appMode={appMode}
+        surfCam={surfCam}
+        lookingThrough={lookingThrough}
+        onSurfCamChange={(patch) => useSolarHouseStore.getState().updateSurfCam(patch)}
+        onSurfCamPreview={() => lookingThrough ? handleReturnView() : handleLookThrough()}
         onAppMode={(mode) => useSolarHouseStore.getState().setAppMode(mode)}
         location={
           <LocationSearch
