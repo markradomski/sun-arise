@@ -844,6 +844,27 @@ export default function App() {
    * change what the capture frame must cover, and a projection left stale
    * would report a framing the preview is not actually showing.
    */
+  // Keep the Cesium eye synchronized with live aim sliders while previewing.
+  // The initial Look through action alone is not enough: Zustand changes
+  // update the overlay but otherwise leave the actual Cesium camera stationary.
+  useEffect(() => {
+    if (!lookingThrough || !surfCam) return;
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.viewer.camera.setView({
+      destination: Cartesian3.fromDegrees(
+        surfCam.ground.longitude,
+        surfCam.ground.latitude,
+        cameraElevationMeters(surfCam),
+      ),
+      orientation: {
+        heading: CesiumMath.toRadians(surfCam.bearingDeg),
+        pitch: CesiumMath.toRadians(cesiumPitchDeg(surfCam.tiltDeg)),
+        roll: 0,
+      },
+    });
+  }, [lookingThrough, surfCam]);
+
   useEffect(() => {
     if (!lookingThrough) return;
     applyLensToViewfinder();
