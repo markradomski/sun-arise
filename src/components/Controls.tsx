@@ -122,7 +122,17 @@ export default function Controls(props: Props) {
                 </>
               )}
             </>
-          ) : <span className="dock-status">Solar analysis</span>}
+          ) : (
+            <>
+              <div className="dock-status"><span className="dock-caption">Solar analysis</span><strong>{formatClockMinutes(minutes)}</strong></div>
+              <label className="dock-control dock-solar-time">
+                <span>Time <strong>{formatClockMinutes(minutes)}</strong></span>
+                <input type="range" min="0" max="1439" value={minutes} onChange={(e) => props.onTime(Number(e.target.value))} />
+              </label>
+              <button className="dock-preview" onClick={props.onToggle}>{props.playing ? "Pause sun" : "Play sun"}</button>
+              <div className="dock-sun-status">Sun {Math.round(props.solar.altitudeDeg)}° above horizon</div>
+            </>
+          )}
           <button ref={expandRef} className="panel-toggle dock-expand" onClick={toggleCollapsed} aria-expanded={false} aria-controls={bodyId} aria-label="Expand control panel" title="Expand panel"><PanelLeftOpenIcon /></button>
         </div>
       )}
