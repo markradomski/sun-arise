@@ -952,3 +952,34 @@ input[type="date"]:focus {
   .section-info-popover { left: 20px; top: 12%; }
 }
 @media (prefers-reduced-motion: reduce) { .controls.collapsed { transition: none; } }
+
+
+/* Dock and scrollbar corrections, October 2026 */
+.controls:not(.collapsed) { padding-right: 12px; }
+.controls:not(.collapsed) .controls-body {
+  padding-right: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(180,185,189,.38) transparent;
+  overscroll-behavior: contain;
+}
+.controls:not(.collapsed) .controls-body::-webkit-scrollbar { width: 6px; }
+.controls:not(.collapsed) .controls-body::-webkit-scrollbar-track { background: transparent; }
+.controls:not(.collapsed) .controls-body::-webkit-scrollbar-thumb { background: rgba(180,185,189,.4); border-radius: 8px; }
+.controls:not(.collapsed) .controls-body::-webkit-scrollbar-thumb:hover { background: rgba(180,185,189,.65); }
+.controls:not(.collapsed) .sticky-brand { flex: none; }
+/* Keep dock actions out of the diagnostics zone and ensure expansion is clickable. */
+.controls.collapsed { z-index: 20; right: 220px; }
+.controls.collapsed .surf-dock { width: 100%; }
+.controls.collapsed .dock-expand { flex: none; position: relative; z-index: 2; }
+.dock-sun-status { color: #b7bac0; font-size: 12px; white-space: nowrap; }
+@media (max-width: 1100px) {
+  .controls.collapsed { right: 175px; }
+  .dock-sun-status { display: none; }
+}
+@media (max-width: 700px) {
+  .controls.collapsed { right: 10px; bottom: 65px; }
+  .dock-solar-time { display: flex; flex: 1; min-width: 70px; }
+  .dock-brand strong { display: none; }
+  .dock-status { display: none; }
+  .dock-preview { padding: 7px 9px; }
+}
