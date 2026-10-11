@@ -107,7 +107,7 @@ export default function SurfCamPanel(props: Props) {
 
   return (
     <>
-      <Section title="Configuration">
+      <Section title="Configuration" info={<p>Camera presets are planning comparisons, not product specifications. Fixed-camera FOV changes do not represent physical optical zoom. The external 3D frustum is visible only from outside the camera.</p>}>
         <div className="button-row" role="group" aria-label="Camera configuration">
           {CAMERA_CONFIGURATIONS.map((option) => (
             <button
@@ -153,14 +153,7 @@ export default function SurfCamPanel(props: Props) {
           </>
         )}
 
-        <p className="note muted">
-          {configuration?.purpose}{" "}
-          {configuration?.kind === "FIXED"
-            ? "Field-of-view changes on a fixed camera are planning comparisons, not optical zoom available after installation."
-            : "A PTZ configuration can be zoomed in this tool within a typical range; that is still a planning exploration, not a product specification."}{" "}
-          Aim, height and framing stay adjustable so the site can be planned
-          before anything is chosen.
-        </p>
+        
 
         <div className="button-row">
           <button
@@ -171,10 +164,10 @@ export default function SurfCamPanel(props: Props) {
             {props.frustumVisible ? "Hide" : "Show"} external 3D frustum
           </button>
         </div>
-        <p className="note muted">The yellow 3D field-of-view lines are visible only from outside the camera. In Look through camera mode, use the 2D recording-frame guides instead.</p>
+        
       </Section>
 
-      <Section title="Camera mount">
+      <Section title="Camera mount" info={<p>Mount height is measured above sampled terrain. Terrain elevation uses the WGS84 ellipsoid, not mean sea level. Proposed coordinates must be verified on site.</p>}>
         <div className="button-row">
           <button
             className={props.armed ? "active" : ""}
@@ -232,10 +225,7 @@ export default function SurfCamPanel(props: Props) {
               </p>
             )}
 
-            <p className="note muted">
-              Elevations are metres above the WGS84 ellipsoid, not above mean
-              sea level. Mount height is measured from the sampled terrain.
-            </p>
+            
 
             <Slider
               id={ids.height}
@@ -263,7 +253,7 @@ export default function SurfCamPanel(props: Props) {
       </Section>
 
       {camera && (
-        <Section title="Aim">
+        <Section title="Aim" info={<p>Bearing is clockwise from true north. Downward tilt is below the horizon. Changes update the live viewfinder.</p>}>
           <Slider
             id={ids.bearing}
             label="Bearing"
@@ -288,7 +278,7 @@ export default function SurfCamPanel(props: Props) {
       )}
 
       {camera && (
-        <Section title="Lens">
+        <Section title="Lens" info={<p>Field of view determines how much of the scene fits in the image. Lens presets are approximate planning tools.</p>}>
           <div className="button-row">
             {LENS_PRESETS.map((preset) => (
               <button
@@ -351,7 +341,7 @@ export default function SurfCamPanel(props: Props) {
       )}
 
       {camera && (
-        <Section title="Framing">
+        <Section title="Framing" info={<p>Pixel estimates assume ideal camera geometry; haze, compression, motion blur and lens distortion are excluded. The Cesium scene is not real camera footage.</p>}>
           <label className="field-label" htmlFor={ids.resolution}>
             Output resolution
           </label>
@@ -455,19 +445,13 @@ export default function SurfCamPanel(props: Props) {
             </button>
           </div>
 
-          <p className="note muted">Recording-frame brackets appear when you select Look through camera. They mark the captured image; the external yellow 3D frustum is hidden in that view.</p>
-          <p className="note muted">
-            Pixel figures are geometry only — an ideal pinhole lens with no
-            distortion, haze, motion blur, sensor noise or compression. They
-            say how much of the sensor something covers, not whether it would
-            be recognisable. The satellite imagery in the preview is not video
-            and shows nothing about a real camera's sharpness.
-          </p>
+          
+          
         </Section>
       )}
 
       {camera && (
-        <Section title="Terrain visibility">
+        <Section title="Terrain visibility" info={<p>Sightlines test sampled bare-earth terrain only. Buildings, vegetation, fences and atmospheric effects are not included.</p>}>
           <div className="button-row">
             <button
               className={props.targetArmed ? "active" : ""}
@@ -538,7 +522,7 @@ export default function SurfCamPanel(props: Props) {
       )}
 
       {camera && (
-        <Section title="Preview">
+        <Section title="Preview" info={<p>Look through camera borrows the navigation view and matches its projection to the planned lens. Return to map restores navigation.</p>}>
           <div className="button-row">
             {props.lookingThrough ? (
               <button className="active" onClick={props.onReturnView}>
