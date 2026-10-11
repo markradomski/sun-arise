@@ -738,8 +738,9 @@ input[type="date"]:focus {
 .viewfinder-frame {
   position: relative;
   box-sizing: border-box;
-  border: 1px solid rgba(255, 255, 255, .45);
+  border: 1px solid rgba(255, 205, 35, .85);
   background: rgba(0, 0, 0, .025);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .65), 0 0 0 9999px rgba(0, 0, 0, .12);
 }
 .viewfinder-frame-label {
   position: absolute;
@@ -748,7 +749,7 @@ input[type="date"]:focus {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: .13em;
-  color: #fff;
+  color: #ffd23c;
   text-shadow: 0 1px 3px rgba(0, 0, 0, .9);
 }
 
@@ -756,7 +757,8 @@ input[type="date"]:focus {
   position: absolute;
   width: 18px;
   height: 18px;
-  border: 1.5px solid rgba(255,255,255,.75);
+  border: 2px solid #ffd23c;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.9));
 }
 /* Keep guides within the recording rectangle. On 16:9 screens the
    recording frame touches the viewport edges, so flush corners were clipped
@@ -771,8 +773,9 @@ input[type="date"]:focus {
   width: 22px; height: 22px;
   transform: translate(-50%, -50%);
   background:
-    linear-gradient(rgba(255,255,255,.8), rgba(255,255,255,.8)) center/1px 100% no-repeat,
-    linear-gradient(rgba(255,255,255,.8), rgba(255,255,255,.8)) center/100% 1px no-repeat;
+    linear-gradient(#ffd23c, #ffd23c) center/1px 100% no-repeat,
+    linear-gradient(#ffd23c, #ffd23c) center/100% 1px no-repeat;
+  filter: drop-shadow(0 1px 2px #000);
 }
 .viewfinder-target {
   position: absolute;
