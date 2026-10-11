@@ -890,3 +890,65 @@ input[type="date"]:focus {
   background: #17191b;
   color: #fff;
 }
+
+
+/* Surf Cam dock redesign: expanded panel scrolls independently of its header. */
+.controls:not(.collapsed) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.controls:not(.collapsed) .controls-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.controls:not(.collapsed) .sticky-brand {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  padding: 5px 0 12px;
+  background: #15191d;
+}
+.controls.collapsed {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: auto;
+  bottom: 20px;
+  width: auto;
+  max-height: none;
+  padding: 10px 14px;
+  border-radius: 14px;
+  overflow: visible;
+  transition: transform .28s ease, opacity .28s ease;
+}
+.surf-dock { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.dock-brand { display: flex; align-items: center; gap: 9px; flex: none; white-space: nowrap; }
+.dock-brand .brand-mark { width: 30px; height: 30px; }
+.dock-status { display: flex; flex-direction: column; min-width: 90px; font-size: 12px; }
+.dock-caption { color: #9da2aa; font-size: 10px; }
+.dock-control { display: flex; flex: 1; min-width: 85px; max-width: 230px; flex-direction: column; gap: 3px; font-size: 11px; }
+.dock-control span { display: flex; justify-content: space-between; }
+.dock-control input { width: 100%; margin: 0; accent-color: #f3d077; }
+.dock-preview { flex: none; padding: 9px 12px; border-radius: 8px; }
+.dock-expand { margin-left: auto; }
+.panel-section-header { display: flex; align-items: center; position: relative; }
+.panel-section-header .panel-section-head { flex: 1; min-width: 0; }
+.section-info-anchor { position: relative; flex: none; }
+.section-info-button { width: 22px; height: 22px; padding: 0; border: 1px solid #737b82; border-radius: 50%; background: transparent; color: #d7d5cd; font: 700 12px/1 inherit; cursor: pointer; }
+.section-info-popover { position: fixed; z-index: 100; left: min(440px, 50vw); top: 22%; width: min(310px, calc(100vw - 40px)); padding: 18px 38px 18px 18px; border-radius: 12px; border: 1px solid #5c6269; background: #1b2128; color: #eae8e1; box-shadow: 0 12px 45px #000a; font-size: 13px; line-height: 1.55; }
+.section-info-popover p { margin: 0; }
+.section-info-close { position: absolute; right: 8px; top: 8px; border: 0; background: transparent; color: #eee; font-size: 20px; cursor: pointer; }
+@media (max-width: 700px) {
+  .controls.collapsed { left: 10px; right: 10px; bottom: 10px; width: auto; padding: 9px; }
+  .dock-brand strong, .dock-status, .dock-control { display: none; }
+  .surf-dock { gap: 10px; }
+  .dock-preview { margin-left: auto; }
+  .dock-expand { margin-left: 0; }
+  .section-info-popover { left: 20px; top: 12%; }
+}
+@media (prefers-reduced-motion: reduce) { .controls.collapsed { transition: none; } }
