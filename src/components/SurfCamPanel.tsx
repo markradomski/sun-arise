@@ -589,6 +589,26 @@ function SavedMounts(props: {
   const [draft, setDraft] = useState("");
   const nameId = useId();
 
+  // Conservative screening: only confirmed clear, non-marginal terrain and
+  // an in-frame target qualify. Pixel width breaks ties; it is not proof
+  // of sufficient real-world image quality.
+  const candidates = props.target ? props.mounts.map((mount) => {
+    const camera: InstallationCamera = { ...mount, id: mount.id, label: mount.name };
+    const preset = TARGET_SIZES.find((size) => size.id === props.capture.targetSizeId);
+    const reference = preset
+      ? { widthMeters: preset.widthMeters, heightMeters: preset.heightMeters }
+      : { widthMeters: props.capture.customWidthMeters, heightMeters: props.capture.customHeightMeters };
+    const framing = frameTarget(camera, props.target!, props.capture.resolutionId, reference);
+    const sight = props.sightLines[mount.id];
+    const clear = typeof sight === "object" && sight.classification === "CLEAR" && !sight.marginal;
+    return { mount, framing, sight, clear, viable: clear && framing.image.inFrame };
+  }) : [];
+  const ranked = [...candidates].sort((a, b) =>
+    Number(b.viable) - Number(a.viable) ||
+    (b.viable && a.viable ? b.framing.size.widthPixels - a.framing.size.widthPixels : 0)
+  );
+  const preferred = ranked[0]?.viable ? ranked[0] : null;
+
   const save = () => {
     props.onSave(name);
     setName("");
@@ -648,7 +668,17 @@ function SavedMounts(props: {
               </tbody>
             </table>
           </div>
-          <p className="note muted">Foreground vegetation and structures: not assessed. Verify proposed positions on site.</p>
+          {preferred ? (
+            <div className="mount-recommendation" aria-live="polite">
+              <p className="field-label">Provisional preferred mount</p>
+              <p><strong>{preferred.mount.name}</strong> · {preferred.mount.mountHeightMeters.toFixed(1)} m above terrain · bearing {preferred.mount.bearingDeg.toFixed(0)}° · tilt {preferred.mount.tiltDeg.toFixed(0)}° · {preferred.mount.horizontalFovDeg.toFixed(0)}° horizontal FOV · {props.capture.resolutionId.toUpperCase()}</p>
+              <p className="note">The target is in frame at approximately {Math.round(preferred.framing.size.widthPixels)} px wide and sampled terrain is clear. {ranked.filter((entry) => entry.viable).length} of {ranked.length} saved mounts meet both screening checks. Ranking favours larger target image size among those passing.</p>
+              <button type="button" className="secondary" onClick={() => props.onSelect(preferred.mount.id)}>Inspect preferred mount</button>
+            </div>
+          ) : (
+            <p className="note warn">No saved mount currently has both confirmed clear terrain and the target inside its image. Adjust positions, aim or FOV, or wait for terrain sampling.</p>
+          )}
+          <p className="note muted">Provisional geometry-only screening, not an installation approval. Foreground vegetation, buildings, mounting safety, weather, optical sharpness and network/power availability have not been verified. Inspect the site before purchasing hardware.</p>
         </div>
       )}
       {props.mounts.length === 0 ? (
