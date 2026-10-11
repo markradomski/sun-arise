@@ -7,6 +7,7 @@ import { civilParts } from "../solar/timezone";
 import { SEASONS, SEASON_LABELS, type Season } from "../solar/seasons";
 import Section from "./Section";
 import type { AppMode } from "../state/store";
+import type { InstallationCamera } from "../optics/camera";
 
 interface Props {
   date: Date;
@@ -31,6 +32,10 @@ interface Props {
   /** Shared location navigation, rendered inside the Site section. */
   location?: ReactNode;
   children?: ReactNode;
+  surfCam?: InstallationCamera | null;
+  lookingThrough?: boolean;
+  onSurfCamChange?: (patch: Partial<InstallationCamera>) => void;
+  onSurfCamPreview?: () => void;
 }
 
 const APP_MODES: { mode: AppMode; label: string }[] = [
@@ -96,23 +101,29 @@ export default function Controls(props: Props) {
   return (
     <aside className={`controls${collapsed ? " collapsed" : ""}`}>
       {collapsed && (
-        <div className="rail">
-          <BrandMark />
-          <div className="rail-wordmark" aria-hidden="true">
-            <span>SUN</span>
-            <span>ARISE</span>
-          </div>
-          <button
-            ref={expandRef}
-            className="panel-toggle"
-            onClick={toggleCollapsed}
-            aria-expanded={false}
-            aria-controls={bodyId}
-            aria-label="Expand control panel"
-            title="Expand panel"
-          >
-            <PanelLeftOpenIcon />
-          </button>
+        <div className="surf-dock" role="toolbar" aria-label="Compact Sun Arise controls">
+          <div className="dock-brand"><BrandMark /><strong>Sun Arise</strong></div>
+          {props.appMode === "SURF_CAM" ? (
+            <>
+              <div className="dock-status"><span className="dock-caption">Camera</span><strong>{props.surfCam ? `${props.surfCam.mountHeightMeters.toFixed(1)} m mount` : "Not placed"}</strong></div>
+              {props.surfCam && (
+                <>
+                  {([
+                    ["Bearing", "bearingDeg", 0, 359],
+                    ["Tilt", "tiltDeg", 0, 90],
+                    ["FOV", "horizontalFovDeg", 1, 120],
+                  ] as const).map(([label, field, min, max]) => (
+                    <label className="dock-control" key={field}>
+                      <span>{label} <strong>{Math.round(props.surfCam![field])}°</strong></span>
+                      <input type="range" min={min} max={max} value={props.surfCam![field]} onChange={(e) => props.onSurfCamChange?.({ [field]: Number(e.target.value) })} />
+                    </label>
+                  ))}
+                  <button className="dock-preview" onClick={props.onSurfCamPreview}>{props.lookingThrough ? "Return to map" : "Look through camera"}</button>
+                </>
+              )}
+            </>
+          ) : <span className="dock-status">Solar analysis</span>}
+          <button ref={expandRef} className="panel-toggle dock-expand" onClick={toggleCollapsed} aria-expanded={false} aria-controls={bodyId} aria-label="Expand control panel" title="Expand panel"><PanelLeftOpenIcon /></button>
         </div>
       )}
 
@@ -120,7 +131,7 @@ export default function Controls(props: Props) {
           state, and `display: none` also takes it out of the tab order and
           the accessibility tree. */}
       <div className="controls-body" id={bodyId}>
-      <div className="brand">
+      <div className="brand sticky-brand">
         <BrandMark />
         <div className="brand-text">
           <h1>Sun Arise</h1>
