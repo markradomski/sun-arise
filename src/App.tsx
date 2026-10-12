@@ -371,6 +371,21 @@ export default function App() {
      * whatever the loaded tile happened to say, which at a distant, coarsely
      * loaded part of the bay can be metres out.
      */
+    async function settleSurfCamera(location: GeoPosition) {
+      const provider = scene.getTerrainProvider();
+      if (!provider || useSolarHouseStore.getState().terrainStatus !== "READY" || disposed) return;
+      const [height] = await sampleElevations(provider, [location]);
+      if (disposed || height === undefined) return;
+      const current = useSolarHouseStore.getState().surfCam;
+      // A later placement must not be overwritten by an earlier terrain request.
+      if (!current || current.ground.latitude !== location.latitude ||
+          current.ground.longitude !== location.longitude) return;
+      useSolarHouseStore.getState().setSurfCam({
+        ...current,
+        ground: { ...location, height },
+      });
+    }
+
     async function settleTarget(location: GeoPosition) {
       const provider = scene.getTerrainProvider();
       const store = useSolarHouseStore.getState();
@@ -434,6 +449,7 @@ export default function App() {
             }),
           );
           store.armSurfCam(false);
+          void settleSurfCamera(location);
           return;
         }
 
