@@ -1062,6 +1062,12 @@ input[type="date"]:focus {
   text-anchor: end;
 }
 
+/* Collapsed content must leave layout and keyboard navigation entirely.
+   Restored after removing obsolete vertical-rail rules. */
+.controls.collapsed .controls-body {
+  display: none;
+}
+
 /* ── Shared expand/collapse button ── */
 .panel-toggle {
   display: grid;
