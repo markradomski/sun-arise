@@ -671,21 +671,16 @@ function SavedMounts(props: {
         </button>
       </div>
 
+      {props.mounts.length > 0 && !props.target && (
+        <p className="note muted">To compare these positions, place a target in the Terrain visibility section. Each saved mount will then be evaluated against the same target.</p>
+      )}
+      {props.target && props.mounts.length === 0 && (
+        <p className="note muted">Target ready. Save a camera position, move the camera and save another to compare them.</p>
+      )}
       {props.target && props.mounts.length > 0 && (
         <div className="mount-comparison">
-          <details className="mount-advanced"><summary>Optional: model foreground obstructions</summary><div className="mount-recommendation">
-            <div className="obstruction-fields">
-              <label>Name<input value={obstacleName} onChange={(e) => setObstacleName(e.target.value)} /></label>
-              <label>Latitude<input type="number" step="any" placeholder="-41.00" value={obstacleLat} onChange={(e) => setObstacleLat(e.target.value)} /></label>
-              <label>Longitude<input type="number" step="any" placeholder="147.07" value={obstacleLon} onChange={(e) => setObstacleLon(e.target.value)} /></label>
-              <label>Height (m)<input type="number" min="0.1" step="0.5" value={obstacleHeight} onChange={(e) => setObstacleHeight(Number(e.target.value))} /></label>
-              <label>Radius (m)<input type="number" min="0.1" step="0.5" value={obstacleRadius} onChange={(e) => setObstacleRadius(Number(e.target.value))} /></label>
-            </div>
-            <button type="button" className="secondary" onClick={addObstruction}>Add obstruction</button>
-            {obstacles.map((item) => <p className="note" key={item.id}>{item.name} · {item.heightMeters} m tall · {item.radiusMeters} m radius <button type="button" className="link" onClick={() => setObstacles((previous) => previous.filter((entry) => entry.id !== item.id))}>Remove</button></p>)}
-          </div>
-          </details>
-          <p className="field-label">Saved mount comparison · common target</p>
+          <p className="field-label">Compare positions · common target</p>
+          <p className="note muted">{props.mounts.length} saved position{props.mounts.length === 1 ? "" : "s"} · Select a mount name to inspect it in the scene.</p>
           <div className="mount-table-scroll" role="region" aria-label="Saved mount comparison" tabIndex={0}>
             <table className="mount-table">
               <thead><tr><th scope="col">Mount</th><th scope="col">Range</th><th scope="col">Terrain</th><th scope="col">Structures</th><th scope="col">Framing</th></tr></thead>
@@ -713,6 +708,19 @@ function SavedMounts(props: {
               </tbody>
             </table>
           </div>
+          <details className="mount-advanced"><summary>Optional: model foreground obstructions</summary><div className="mount-recommendation">
+            <div className="obstruction-fields">
+              <label>Name<input value={obstacleName} onChange={(e) => setObstacleName(e.target.value)} /></label>
+              <label>Latitude<input type="number" step="any" placeholder="-41.00" value={obstacleLat} onChange={(e) => setObstacleLat(e.target.value)} /></label>
+              <label>Longitude<input type="number" step="any" placeholder="147.07" value={obstacleLon} onChange={(e) => setObstacleLon(e.target.value)} /></label>
+              <label>Height (m)<input type="number" min="0.1" step="0.5" value={obstacleHeight} onChange={(e) => setObstacleHeight(Number(e.target.value))} /></label>
+              <label>Radius (m)<input type="number" min="0.1" step="0.5" value={obstacleRadius} onChange={(e) => setObstacleRadius(Number(e.target.value))} /></label>
+            </div>
+            <button type="button" className="secondary" onClick={addObstruction}>Add obstruction</button>
+            {obstacles.map((item) => <p className="note" key={item.id}>{item.name} · {item.heightMeters} m tall · {item.radiusMeters} m radius <button type="button" className="link" onClick={() => setObstacles((previous) => previous.filter((entry) => entry.id !== item.id))}>Remove</button></p>)}
+          </div>
+          </details>
+
           {preferred ? (
             <div className="mount-recommendation" aria-live="polite">
               <p className="field-label">Provisional preferred mount</p>
