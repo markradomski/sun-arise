@@ -983,3 +983,34 @@ input[type="date"]:focus {
   .dock-status { display: none; }
   .dock-preview { padding: 7px 9px; }
 }
+
+
+/* Top-aligned compact dock and invariant leading toggle. */
+.controls.collapsed {
+  top: 20px;
+  bottom: auto;
+  right: 20px;
+  padding: 10px 14px;
+}
+.controls.collapsed .dock-expand {
+  margin: 0;
+  order: -1;
+}
+.controls:not(.collapsed) .brand .panel-toggle-leading {
+  margin-left: 0;
+  order: -1;
+}
+.controls:not(.collapsed) .brand {
+  align-items: center;
+}
+@media (max-width: 1100px) {
+  .controls.collapsed { right: 20px; }
+}
+@media (max-width: 700px) {
+  .controls.collapsed {
+    top: 10px;
+    bottom: auto;
+    left: 10px;
+    right: 10px;
+  }
+}
