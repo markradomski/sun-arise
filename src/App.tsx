@@ -380,9 +380,13 @@ export default function App() {
       // A later placement must not be overwritten by an earlier terrain request.
       if (!current || current.ground.latitude !== location.latitude ||
           current.ground.longitude !== location.longitude) return;
+      // Preserve the lens elevation picked on the model surface when the
+      // terrain datum is refined after placement.
+      const lensElevation = current.ground.height + current.mountHeightMeters;
       useSolarHouseStore.getState().setSurfCam({
         ...current,
         ground: { ...location, height },
+        mountHeightMeters: Math.max(0, lensElevation - height),
       });
     }
 
@@ -436,22 +440,29 @@ export default function App() {
       scene: scene.scene,
       overlay,
       getTerrainStatus: () => useSolarHouseStore.getState().terrainStatus,
+      onHouseClick: (surface, house) => {
+        const store = useSolarHouseStore.getState();
+        if (store.appMode !== "SURF_CAM" || !store.surfCamArmed) return;
+        // Use the model surface for horizontal placement and elevation.
+        // The house's base is our initial ground datum; terrain is sampled
+        // again below so mount height remains relative to the actual terrain.
+        const mountHeightMeters = Math.max(0, surface.height - house.position.height);
+        store.setSurfCam(createCamera("surf-cam-1",
+          { latitude: surface.latitude, longitude: surface.longitude, height: house.position.height },
+          { ...(store.surfCam ?? {}), label: "House-mounted camera", mountHeightMeters },
+        ));
+        store.armSurfCam(false);
+        void settleSurfCamera({
+          latitude: surface.latitude,
+          longitude: surface.longitude,
+          height: house.position.height,
+        });
+      },
       onGroundClick: (location) => {
         const store = useSolarHouseStore.getState();
 
-        if (store.surfCamArmed) {
-          // A camera the user places is their own, so it keeps their angles
-          // but not the label describing the proposal.
-          store.setSurfCam(
-            createCamera("surf-cam-1", location, {
-              ...(store.surfCam ?? {}),
-              label: "Camera 1",
-            }),
-          );
-          store.armSurfCam(false);
-          void settleSurfCamera(location);
-          return;
-        }
+        // Surf Cam mounts are placed on the model house, never bare terrain.
+        if (store.surfCamArmed && store.appMode === "SURF_CAM") return;
 
         if (store.surfTargetArmed) {
           // The click gives a ground point at the globe's current level of
