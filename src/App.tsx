@@ -1440,7 +1440,15 @@ export default function App() {
             armed={surfCamArmed}
             lookingThrough={lookingThrough}
             terrainReady={terrainStatus === "READY"}
-            onArm={() => useSolarHouseStore.getState().armSurfCam(true)}
+            onArm={() => {
+              const store = useSolarHouseStore.getState();
+              if (store.surfCamArmed) {
+                store.armSurfCam(false);
+                return;
+              }
+              if (store.lookingThrough) handleReturnView();
+              store.armSurfCam(true);
+            }}
             onChange={(patch) =>
               useSolarHouseStore.getState().updateSurfCam(patch)
             }
