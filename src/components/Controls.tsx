@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { SolarPosition } from "../types";
 import type { CameraMode } from "../cesium/CameraController";
 import type { CivilZone } from "../solar/timezone";
@@ -61,6 +61,18 @@ export default function Controls(props: Props) {
    */
   const [collapsed, setCollapsed] = useState(false);
   const bodyId = useId();
+
+  // Automatically tuck the full-width panel away at the compact breakpoint.
+  // Only react to breakpoint crossings; an explicit expand remains possible.
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 700px)");
+    if (query.matches) setCollapsed(true);
+    const onChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setCollapsed(true);
+    };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
 
   /**
    * Toggling swaps which of the two buttons exists, so without this the
