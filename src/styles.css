@@ -1041,3 +1041,20 @@ input[type="date"]:focus {
     top: 10px;
   }
 }
+
+
+/* A single toggle is a direct child of the panel, never nested in the
+   scrolling header. Both layouts therefore use the exact same origin. */
+.controls { --toggle-left: 12px; --toggle-top: 12px; }
+.controls > .panel-toggle-fixed {
+  position: absolute;
+  left: var(--toggle-left);
+  top: var(--toggle-top);
+  z-index: 50;
+  margin: 0;
+}
+.controls:not(.collapsed) .sticky-brand { padding-left: 48px; }
+.controls.collapsed .surf-dock { padding-left: 48px; }
+@media (max-width: 700px) {
+  .controls { --toggle-left: 10px; --toggle-top: 10px; }
+}
