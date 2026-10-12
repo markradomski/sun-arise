@@ -102,6 +102,7 @@ export default function Controls(props: Props) {
     <aside className={`controls${collapsed ? " collapsed" : ""}`}>
       {collapsed && (
         <div className="surf-dock" role="toolbar" aria-label="Compact Sun Arise controls">
+          <button ref={expandRef} className="panel-toggle dock-expand" onClick={toggleCollapsed} aria-expanded={false} aria-controls={bodyId} aria-label="Expand control panel" title="Expand panel"><PanelLeftOpenIcon /></button>
           <div className="dock-brand"><BrandMark /><strong>Sun Arise</strong></div>
           {props.appMode === "SURF_CAM" ? (
             <>
@@ -133,7 +134,6 @@ export default function Controls(props: Props) {
               <div className="dock-sun-status">Sun {Math.round(props.solar.altitudeDeg)}° above horizon</div>
             </>
           )}
-          <button ref={expandRef} className="panel-toggle dock-expand" onClick={toggleCollapsed} aria-expanded={false} aria-controls={bodyId} aria-label="Expand control panel" title="Expand panel"><PanelLeftOpenIcon /></button>
         </div>
       )}
 
@@ -142,15 +142,9 @@ export default function Controls(props: Props) {
           the accessibility tree. */}
       <div className="controls-body" id={bodyId}>
       <div className="brand sticky-brand">
-        <BrandMark />
-        <div className="brand-text">
-          <h1>Sun Arise</h1>
-          <p className="eyebrow">Light places better</p>
-          <p className="brand-location">{props.siteName}</p>
-        </div>
         <button
           ref={collapseRef}
-          className="panel-toggle"
+          className="panel-toggle panel-toggle-leading"
           onClick={toggleCollapsed}
           aria-expanded={true}
           aria-controls={bodyId}
@@ -159,6 +153,12 @@ export default function Controls(props: Props) {
         >
           <PanelLeftCloseIcon />
         </button>
+        <BrandMark />
+        <div className="brand-text">
+          <h1>Sun Arise</h1>
+          <p className="eyebrow">Light places better</p>
+          <p className="brand-location">{props.siteName}</p>
+        </div>
       </div>
 
       <div className="segmented" role="group" aria-label="Workflow">
