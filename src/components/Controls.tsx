@@ -72,14 +72,13 @@ export default function Controls(props: Props) {
   // One ref each: the collapse button lives in the body, which stays mounted
   // and merely hidden, so a shared ref would be left pointing at nothing the
   // moment the rail unmounted.
-  const collapseRef = useRef<HTMLButtonElement>(null);
-  const expandRef = useRef<HTMLButtonElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const refocus = useRef(false);
 
   useLayoutEffect(() => {
     if (!refocus.current) return;
     refocus.current = false;
-    (collapsed ? expandRef : collapseRef).current?.focus();
+    toggleRef.current?.focus();
   }, [collapsed]);
 
   const toggleCollapsed = () => {
@@ -100,9 +99,20 @@ export default function Controls(props: Props) {
 
   return (
     <aside className={`controls${collapsed ? " collapsed" : ""}`}>
+      <button
+        ref={toggleRef}
+        type="button"
+        className="panel-toggle panel-toggle-fixed"
+        onClick={toggleCollapsed}
+        aria-expanded={!collapsed}
+        aria-controls={bodyId}
+        aria-label={collapsed ? "Expand control panel" : "Collapse control panel"}
+        title={collapsed ? "Expand panel" : "Collapse panel"}
+      >
+        {collapsed ? <PanelLeftOpenIcon /> : <PanelLeftCloseIcon />}
+      </button>
       {collapsed && (
         <div className="surf-dock" role="toolbar" aria-label="Compact Sun Arise controls">
-          <button ref={expandRef} className="panel-toggle dock-expand" onClick={toggleCollapsed} aria-expanded={false} aria-controls={bodyId} aria-label="Expand control panel" title="Expand panel"><PanelLeftOpenIcon /></button>
           <div className="dock-brand"><BrandMark /><strong>Sun Arise</strong></div>
           {props.appMode === "SURF_CAM" ? (
             <>
@@ -142,17 +152,6 @@ export default function Controls(props: Props) {
           the accessibility tree. */}
       <div className="controls-body" id={bodyId}>
       <div className="brand sticky-brand">
-        <button
-          ref={collapseRef}
-          className="panel-toggle panel-toggle-leading"
-          onClick={toggleCollapsed}
-          aria-expanded={true}
-          aria-controls={bodyId}
-          aria-label="Collapse control panel"
-          title="Collapse panel"
-        >
-          <PanelLeftCloseIcon />
-        </button>
         <BrandMark />
         <div className="brand-text">
           <h1>Sun Arise</h1>
