@@ -155,6 +155,51 @@ export interface SightTarget {
 export const MIN_TARGET_HEIGHT_METERS = 0;
 export const MAX_TARGET_HEIGHT_METERS = 20;
 
+/**
+ * Persist only explicitly saved Surf Cam positions. Never persist transient
+ * placement gestures, Cesium objects, or the active navigation camera.
+ */
+const MOUNTS_STORAGE_KEY = "sun-arise:surf-cam:saved-mounts:v1";
+
+function validSavedMount(value: unknown): value is SavedMount {
+  if (!value || typeof value !== "object") return false;
+  const m = value as Record<string, unknown>;
+  if (!m.ground || typeof m.ground !== "object") return false;
+  const g = m.ground as Record<string, unknown>;
+  const finite = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+  return typeof m.id === "string" && m.id.length > 0 &&
+    typeof m.name === "string" && typeof m.configurationId === "string" &&
+    finite(g.latitude) && Math.abs(g.latitude as number) <= 90 &&
+    finite(g.longitude) && Math.abs(g.longitude as number) <= 180 &&
+    finite(g.height) && finite(m.mountHeightMeters) &&
+    (m.mountHeightMeters as number) >= 0 &&
+    finite(m.bearingDeg) && finite(m.tiltDeg) && finite(m.horizontalFovDeg);
+}
+
+function loadSavedMounts(): SavedMount[] {
+  try {
+    if (typeof localStorage === "undefined") return [];
+    const raw = localStorage.getItem(MOUNTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(validSavedMount);
+  } catch (error) {
+    console.warn("[surf-cam] Could not restore saved mounts.", error);
+    return [];
+  }
+}
+
+function persistSavedMounts(mounts: SavedMount[]): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(MOUNTS_STORAGE_KEY, JSON.stringify(mounts));
+    }
+  } catch (error) {
+    console.warn("[surf-cam] Could not save mounts to browser storage.", error);
+  }
+}
+
 export const useSolarHouseStore = create<SolarHouseState>((set) => ({
   objects: {},
   order: [],
@@ -184,7 +229,7 @@ export const useSolarHouseStore = create<SolarHouseState>((set) => ({
     customHeightMeters: 2,
   },
   cameraConfigurationId: DEFAULT_CONFIGURATION_ID,
-  savedMounts: [],
+  savedMounts: loadSavedMounts(),
   lookingThrough: false,
 
   addObject(object) {
@@ -459,6 +504,14 @@ function constrainTarget(target: SightTarget): SightTarget {
       : MIN_TARGET_HEIGHT_METERS,
   };
 }
+
+// Persist additions, renames and deletions immediately. Selecting a mount
+// does not rewrite storage because it only changes the active camera.
+useSolarHouseStore.subscribe((state, previous) => {
+  if (state.savedMounts !== previous.savedMounts) {
+    persistSavedMounts(state.savedMounts);
+  }
+});
 
 if (import.meta.env.DEV) {
   (globalThis as Record<string, unknown>).__solarHouseStore = useSolarHouseStore;
