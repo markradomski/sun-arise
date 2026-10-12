@@ -238,6 +238,12 @@ export default function SurfCamPanel(props: Props) {
               onChange={(mountHeightMeters) => props.onChange({ mountHeightMeters })}
             />
 
+          </>
+        )}
+      </Section>
+
+      {camera && (
+        <Section title="Saved positions" defaultOpen={false} badge={props.savedMounts.length || undefined} info={<p>Save and restore mounts. Place a target to compare terrain and framing across saved positions. Results are estimates, not verified real-world visibility.</p>}>
             <SavedMounts
               mounts={props.savedMounts}
               onSave={props.onSaveMount}
@@ -248,9 +254,9 @@ export default function SurfCamPanel(props: Props) {
               capture={props.capture}
               sightLines={props.mountSightLines}
             />
-          </>
-        )}
-      </Section>
+
+        </Section>
+      )}
 
       {camera && (
         <Section title="Aim" info={<p>Bearing is clockwise from true north. Downward tilt is below the horizon. Changes update the live viewfinder.</p>}>
@@ -278,7 +284,7 @@ export default function SurfCamPanel(props: Props) {
       )}
 
       {camera && (
-        <Section title="Lens" info={<p>Field of view determines how much of the scene fits in the image. Lens presets are approximate planning tools.</p>}>
+        <Section title="Lens" info={<p>Field of view determines how much of the scene fits in the image. Lens presets are approximate planning tools, not optical zoom on a fixed camera. Horizon distance assumes an unobstructed sea and is not a visibility result.</p>}>
           <div className="button-row">
             {LENS_PRESETS.map((preset) => (
               <button
@@ -330,13 +336,6 @@ export default function SurfCamPanel(props: Props) {
               </dd>
             </div>
           </dl>
-          <p className="note muted">
-            Framing options, not a lens you can zoom after fitting a fixed
-            camera: there is no focal length or sensor size here, only the
-            angle the camera would cover. Horizon distance assumes an
-            unobstructed sea surface and standard refraction, and is not a
-            visibility result.
-          </p>
         </Section>
       )}
 
@@ -451,7 +450,7 @@ export default function SurfCamPanel(props: Props) {
       )}
 
       {camera && (
-        <Section title="Terrain visibility" info={<p>Sightlines test sampled bare-earth terrain only. Buildings, vegetation, fences and atmospheric effects are not included.</p>}>
+        <Section title="Terrain visibility" info={<p>Sightlines test sampled bare-earth terrain only. Buildings, vegetation, fences, wave height, haze and optical resolution are not included. A drawn line does not prove visibility.</p>}>
           <div className="button-row">
             <button
               className={props.targetArmed ? "active" : ""}
@@ -511,18 +510,11 @@ export default function SurfCamPanel(props: Props) {
               <SightLineReadout state={props.sightLine} />
             </>
           )}
-
-          <p className="note muted">
-            Tests sampled bare-earth terrain only. Trees, fences, buildings,
-            masts, wave height, haze and what the lens can actually resolve are
-            not modelled, and the line drawn in the scene is not evidence that
-            anything is visible.
-          </p>
         </Section>
       )}
 
       {camera && (
-        <Section title="Preview" info={<p>Look through camera borrows the navigation view and matches its projection to the planned lens. Return to map restores navigation.</p>}>
+        <Section title="Preview" info={<p>Look through camera borrows the navigation view and matches its projection to the planned lens. Return to map restores navigation. This is a live simulation, not actual camera footage.</p>}>
           <div className="button-row">
             {props.lookingThrough ? (
               <button className="active" onClick={props.onReturnView}>
@@ -538,10 +530,6 @@ export default function SurfCamPanel(props: Props) {
               Return to my view to get your own view back.
             </p>
           )}
-          <p className="note muted">
-            This moves your existing view to the mount. It is a real-time
-            approximation of the framing, not a rendered camera image.
-          </p>
           <button className="link" onClick={props.onClear}>
             Remove camera
           </button>
@@ -687,7 +675,6 @@ function SavedMounts(props: {
         <div className="mount-comparison">
           <div className="mount-recommendation">
             <p className="field-label">Manually model foreground obstructions</p>
-            <p className="note muted">Add approximate positions (latitude/longitude), height above ground and horizontal radius for trees, roofs or fences. These are simplified cylindrical screening volumes, not surveyed geometry.</p>
             <div className="obstruction-fields">
               <label>Name<input value={obstacleName} onChange={(e) => setObstacleName(e.target.value)} /></label>
               <label>Latitude<input type="number" step="any" placeholder="-41.00" value={obstacleLat} onChange={(e) => setObstacleLat(e.target.value)} /></label>
@@ -699,7 +686,6 @@ function SavedMounts(props: {
             {obstacles.map((item) => <p className="note" key={item.id}>{item.name} · {item.heightMeters} m tall · {item.radiusMeters} m radius <button type="button" className="link" onClick={() => setObstacles((previous) => previous.filter((entry) => entry.id !== item.id))}>Remove</button></p>)}
           </div>
           <p className="field-label">Saved mount comparison · common target</p>
-          <p className="note muted">Each mount has its own terrain sample. Clear terrain does not guarantee visibility through trees, buildings or fences.</p>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", textAlign: "left" }}>
               <thead><tr><th scope="col">Mount</th><th scope="col">Range</th><th scope="col">Terrain</th><th scope="col">Structures</th><th scope="col">Framing</th></tr></thead>
@@ -737,7 +723,6 @@ function SavedMounts(props: {
           ) : (
             <p className="note warn">No saved mount currently passes clear terrain, in-frame target and modeled obstruction checks. Adjust positions, aim or FOV, or wait for terrain sampling.</p>
           )}
-          <p className="note muted">Provisional geometry-only screening, not an installation approval. Unmodeled vegetation, buildings, mounting safety, weather, optical sharpness and network/power availability have not been verified. Inspect the site before purchasing hardware.</p>
         </div>
       )}
       {props.mounts.length === 0 ? (
