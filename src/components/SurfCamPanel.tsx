@@ -673,8 +673,7 @@ function SavedMounts(props: {
 
       {props.target && props.mounts.length > 0 && (
         <div className="mount-comparison">
-          <div className="mount-recommendation">
-            <p className="field-label">Manually model foreground obstructions</p>
+          <details className="mount-advanced"><summary>Optional: model foreground obstructions</summary><div className="mount-recommendation">
             <div className="obstruction-fields">
               <label>Name<input value={obstacleName} onChange={(e) => setObstacleName(e.target.value)} /></label>
               <label>Latitude<input type="number" step="any" placeholder="-41.00" value={obstacleLat} onChange={(e) => setObstacleLat(e.target.value)} /></label>
@@ -685,9 +684,10 @@ function SavedMounts(props: {
             <button type="button" className="secondary" onClick={addObstruction}>Add obstruction</button>
             {obstacles.map((item) => <p className="note" key={item.id}>{item.name} · {item.heightMeters} m tall · {item.radiusMeters} m radius <button type="button" className="link" onClick={() => setObstacles((previous) => previous.filter((entry) => entry.id !== item.id))}>Remove</button></p>)}
           </div>
+          </details>
           <p className="field-label">Saved mount comparison · common target</p>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", textAlign: "left" }}>
+          <div className="mount-table-scroll" role="region" aria-label="Saved mount comparison" tabIndex={0}>
+            <table className="mount-table">
               <thead><tr><th scope="col">Mount</th><th scope="col">Range</th><th scope="col">Terrain</th><th scope="col">Structures</th><th scope="col">Framing</th></tr></thead>
               <tbody>
                 {props.mounts.map((mount) => {
@@ -726,10 +726,7 @@ function SavedMounts(props: {
         </div>
       )}
       {props.mounts.length === 0 ? (
-        <p className="note muted">
-          Saved positions let you move the camera and come back, or compare two
-          mounts against the same target.
-        </p>
+        <p className="note muted">No saved positions yet.</p>
       ) : (
         <ul className="mount-list">
           {props.mounts.map((mount) => (
