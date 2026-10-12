@@ -1014,3 +1014,30 @@ input[type="date"]:focus {
     right: 10px;
   }
 }
+
+
+/* One shared toggle anchor in both panel states. Keep the button out of
+   flex layout so branding and dock content cannot shift its coordinates. */
+.controls { --toggle-inset: 12px; --toggle-space: 48px; }
+.controls:not(.collapsed) .panel-toggle-leading,
+.controls.collapsed .dock-expand {
+  position: absolute;
+  left: var(--toggle-inset);
+  top: var(--toggle-inset);
+  margin: 0;
+  z-index: 30;
+}
+.controls:not(.collapsed) .sticky-brand {
+  padding-left: var(--toggle-space);
+}
+.controls.collapsed .surf-dock {
+  padding-left: var(--toggle-space);
+  box-sizing: border-box;
+}
+@media (max-width: 700px) {
+  .controls:not(.collapsed) .panel-toggle-leading,
+  .controls.collapsed .dock-expand {
+    left: 10px;
+    top: 10px;
+  }
+}
