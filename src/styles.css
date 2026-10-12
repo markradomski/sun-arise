@@ -1062,13 +1062,7 @@ input[type="date"]:focus {
   text-anchor: end;
 }
 
-/* ── Collapsible panel ──────────────────────────────────────────────────── */
-/* Width only: the panel's own height is content-driven once collapsed, and
-   animating that as well would make the rail bounce on every toggle. */
-.controls {
-  transition: width 0.22s ease;
-}
-
+/* ── Shared expand/collapse button ── */
 .panel-toggle {
   display: grid;
   place-items: center;
@@ -1101,70 +1095,6 @@ input[type="date"]:focus {
   margin-left: auto;
 }
 
-.controls.collapsed {
-  width: 68px;
-  padding: 14px 8px;
-  /* Released from the full-height stretch so the rail is only as tall as
-     its contents, leaving the rest of the scene clickable. */
-  bottom: auto;
-  overflow: hidden;
-}
-/* Out of sight, out of the tab order and out of the accessibility tree,
-   while every control inside stays mounted and keeps its state. */
-.controls.collapsed .controls-body {
-  display: none;
-}
-
-.rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-.rail .brand-mark {
-  width: 38px;
-  height: 38px;
-  display: block;
-}
-.rail-wordmark {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  line-height: 1.25;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: #9da2aa;
-  /* The tracking is applied on the right of each glyph; nudge back so the
-     stacked words read as centred. */
-  text-indent: 0.14em;
-}
-
-@media (max-width: 700px) {
-  /* The expanded panel is bottom-anchored and full width here, so collapsing
-     has to drop the right edge or the rail stays a full-width bar — and has
-     to re-anchor to the bottom, since the desktop rule's `bottom: auto` would
-     otherwise meet this layout's `top: auto` and strand the rail at the top,
-     over the diagnostics chip. */
-  .controls.collapsed {
-    right: auto;
-    left: 10px;
-    top: auto;
-    bottom: 10px;
-    width: 68px;
-    max-height: none;
-    padding: 12px 8px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .controls {
-    transition: none;
-  }
-  .panel-toggle {
-    transition: none;
-  }
-}
 
 /* ── Viewfinder overlay ─────────────────────────────────────────────────── */
 /* Never intercepts a gesture: Cesium keeps every drag, wheel and pinch. */
@@ -1613,67 +1543,6 @@ input[type="date"]:focus {
   }
 }
 
-/* Top-aligned compact dock and invariant leading toggle. */
-.controls.collapsed {
-  top: 20px;
-  bottom: auto;
-  right: 20px;
-  padding: 10px 14px;
-}
-.controls.collapsed .dock-expand {
-  margin: 0;
-  order: -1;
-}
-.controls:not(.collapsed) .brand .panel-toggle-leading {
-  margin-left: 0;
-  order: -1;
-}
-.controls:not(.collapsed) .brand {
-  align-items: center;
-}
-@media (max-width: 1100px) {
-  .controls.collapsed {
-    right: 20px;
-  }
-}
-@media (max-width: 700px) {
-  .controls.collapsed {
-    top: 10px;
-    bottom: auto;
-    left: 10px;
-    right: 10px;
-  }
-}
-
-/* One shared toggle anchor in both panel states. Keep the button out of
-   flex layout so branding and dock content cannot shift its coordinates. */
-.controls {
-  --toggle-inset: 12px;
-  --toggle-space: 48px;
-}
-.controls:not(.collapsed) .panel-toggle-leading,
-.controls.collapsed .dock-expand {
-  position: absolute;
-  left: var(--toggle-inset);
-  top: var(--toggle-inset);
-  margin: 0;
-  z-index: 30;
-}
-.controls:not(.collapsed) .sticky-brand {
-  padding-left: var(--toggle-space);
-}
-.controls.collapsed .surf-dock {
-  padding-left: var(--toggle-space);
-  box-sizing: border-box;
-}
-@media (max-width: 700px) {
-  .controls:not(.collapsed) .panel-toggle-leading,
-  .controls.collapsed .dock-expand {
-    left: 10px;
-    top: 10px;
-  }
-}
-
 /* A single toggle is a direct child of the panel, never nested in the
    scrolling header. Both layouts therefore use the exact same origin. */
 .controls {
@@ -1753,4 +1622,25 @@ input[type="date"]:focus {
   .controls:not(.collapsed) .brand h1 {
     font-size: 26px;
   }
+}
+
+
+/* Panel polish: preserve user-adjusted positioning while making layout changes
+   less abrupt. Only the content fades; the Cesium scene is never transformed. */
+.controls { transition: width 260ms ease, background-color 260ms ease; }
+.controls.collapsed .surf-dock { animation: dock-reveal 220ms ease-out both; }
+.controls:not(.collapsed) .controls-body { animation: dock-reveal 220ms ease-out both; }
+@keyframes dock-reveal {
+  from { opacity: .2; }
+  to { opacity: 1; }
+}
+.mount-advanced { border-top: 1px solid rgba(255,255,255,.1); padding: 8px 0; }
+.mount-advanced summary { cursor: pointer; color: #d0ccc0; font-size: 12px; }
+.mount-table-scroll { overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
+.mount-table { width: 100%; min-width: 530px; border-collapse: collapse; text-align: left; font-size: 11px; }
+.mount-table th, .mount-table td { padding: 8px; border-bottom: 1px solid rgba(255,255,255,.12); vertical-align: top; }
+.mount-table th { color: #d0ccc0; font-weight: 600; }
+.mount-table tbody tr:hover { background: rgba(255,255,255,.05); }
+@media (prefers-reduced-motion: reduce) {
+  .controls, .controls.collapsed .surf-dock, .controls:not(.collapsed) .controls-body { transition: none; animation: none; }
 }
