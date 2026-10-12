@@ -174,7 +174,7 @@ export default function SurfCamPanel(props: Props) {
             onClick={props.onArm}
             aria-pressed={props.armed}
           >
-            {props.armed ? "Click the terrain…" : "Place camera"}
+            {props.armed ? "Cancel placement" : camera ? "Move camera" : "Place camera"}
           </button>
           {camera && (
             <button className="secondary" onClick={props.onReset}>
@@ -182,6 +182,12 @@ export default function SurfCamPanel(props: Props) {
             </button>
           )}
         </div>
+
+        {props.armed && (
+          <p className="note" role="status">
+            Placement active: click a visible patch of terrain on the 3D map to set the camera location. The button alone does not move the camera. Click Cancel placement to stop.
+          </p>
+        )}
 
         {!props.terrainReady && (
           <p className="note warn">
