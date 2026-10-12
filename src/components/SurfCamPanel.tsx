@@ -185,7 +185,7 @@ export default function SurfCamPanel(props: Props) {
 
         {props.armed && (
           <p className="note" role="status">
-            Placement active: click a visible patch of terrain on the 3D map to set the camera location. The button alone does not move the camera. Click Cancel placement to stop.
+            Placement active: click directly on the 3D model house (roof, wall or corner). Clicking bare terrain will not place a camera. Click Cancel placement to stop.
           </p>
         )}
 
@@ -198,7 +198,7 @@ export default function SurfCamPanel(props: Props) {
 
         {!camera && (
           <p className="note">
-            Place a camera on the terrain to set its mount point.
+            Click Place camera, then click the model house to choose a roof or wall mounting point.
           </p>
         )}
 
