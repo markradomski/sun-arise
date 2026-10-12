@@ -73,6 +73,7 @@ export interface DragControllerOptions {
   overlay: SelectionOverlay;
   getTerrainStatus: () => TerrainStatus;
   /** Fired for a click that did not land on a scene object. */
+  onHouseClick?: (location: { latitude: number; longitude: number; height: number }, house: SceneObject) => void;
   onGroundClick?: (location: {
     latitude: number;
     longitude: number;
@@ -130,6 +131,13 @@ export class DragController {
     if (this.latch) {
       this.suppressNextGroundClick = true;
       this.commitLatch();
+      return;
+    }
+
+    // While choosing a Surf Cam mount, clicks on the model belong to the
+    // installation workflow, not the house-move/rotate manipulator.
+    if (store.appMode === "SURF_CAM" && store.surfCamArmed) {
+      this.suppressNextGroundClick = false;
       return;
     }
 
@@ -365,6 +373,25 @@ export class DragController {
       return;
     }
     if (this.gesture || this.latch) return;
+
+    const store = useSolarHouseStore.getState();
+    if (store.appMode === "SURF_CAM" && store.surfCamArmed) {
+      const house = this.pickObject(event.position);
+      if (!house || house.type !== "house" || !this.options.onHouseClick) return;
+      // pickPosition uses the visible 3D model surface, unlike globe.pick,
+      // which always returns the bare terrain beneath the house.
+      const surface = this.options.scene.pickPositionSupported
+        ? this.options.scene.pickPosition(event.position)
+        : undefined;
+      if (!surface) return;
+      const hit = Cartographic.fromCartesian(surface);
+      this.options.onHouseClick({
+        latitude: CesiumMath.toDegrees(hit.latitude),
+        longitude: CesiumMath.toDegrees(hit.longitude),
+        height: hit.height,
+      }, house);
+      return;
+    }
 
     const ground = this.pickGround(event.position);
     if (!ground) return;
