@@ -54,6 +54,13 @@ export class CesiumScene {
     // through it. Without this, dragging places objects underground.
     scene.globe.depthTestAgainstTerrain = true;
 
+    // The house models are glazed, and Cesium writes no depth for translucent
+    // surfaces unless asked. Without this, a click on a window reads straight
+    // through the building and `pickPosition` answers with the terrain behind
+    // it — which is how a camera aimed at a roof ended up mounted below the
+    // floor. Costs extra draw calls on a pick, which is a per-click price.
+    scene.pickTranslucentDepth = true;
+
     // Cesium's shadow map defaults to a 5 km range. Across a 15 m house that
     // leaves so little depth precision that the building self-shadows and
     // renders almost black — which looks exactly like a broken model. Tightening
