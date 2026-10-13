@@ -81,7 +81,7 @@ export default function Controls(props: Props) {
         {collapsed ? "☰" : "‹"}
       </button>
       {collapsed && <div className="surf-dock" role="toolbar" aria-label="Compact solar controls">
-        <div className="dock-brand"><span className="dock-sun-icon" aria-hidden="true">☀</span><strong>Sun Arise</strong></div>
+        <div className="dock-brand"><img className="brand-mark" src="/brand/sun-arise-mark.png" alt="" aria-hidden="true" width={30} height={30} draggable={false} /><strong>Sun Arise</strong></div>
         <div className="dock-status"><span className="dock-caption">Solar time</span><strong>{formatClockMinutes(minutes)}</strong></div>
         <label className="dock-control dock-solar-time">
           <span>Time <strong>{formatClockMinutes(minutes)}</strong></span>
@@ -92,10 +92,11 @@ export default function Controls(props: Props) {
       </div>}
       <div className="controls-body" id={bodyId}>
       <div className="brand sticky-brand">
-        <div className="brand-mark" aria-hidden="true">☀</div>
-        <div>
-          <div className="eyebrow">SUN ARISE</div>
-          <h1>{props.siteName}</h1>
+        <img className="brand-mark" src="/brand/sun-arise-mark.png" alt="" aria-hidden="true" width={256} height={256} draggable={false} />
+        <div className="brand-text">
+          <h1>Sun Arise</h1>
+          <p className="eyebrow">Light places better</p>
+          <p className="brand-location">{props.siteName}</p>
         </div>
       </div>
 
