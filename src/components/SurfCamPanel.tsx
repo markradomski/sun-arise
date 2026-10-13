@@ -72,6 +72,8 @@ interface FramingProps {
 interface Props extends FramingProps, ConfigProps {
   camera: InstallationCamera | null;
   armed: boolean;
+  /** Set when the last mounting click hit the house but could not be used. */
+  placementNotice: string | null;
   lookingThrough: boolean;
   terrainReady: boolean;
   onArm: () => void;
@@ -186,6 +188,12 @@ export default function SurfCamPanel(props: Props) {
         {props.armed && (
           <p className="note" role="status">
             Placement active: click directly on the 3D model house (roof, wall or corner). Clicking bare terrain will not place a camera. Click Cancel placement to stop.
+          </p>
+        )}
+
+        {props.placementNotice && (
+          <p className="note warn" role="status">
+            {props.placementNotice}
           </p>
         )}
 

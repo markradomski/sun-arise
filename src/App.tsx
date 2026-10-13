@@ -64,6 +64,7 @@ import { HeatmapOverlay } from "./cesium/HeatmapOverlay";
 import { occluderFor } from "./scene/occluders";
 import { terrainPolicyFor, type GeoPosition } from "./scene/types";
 import { STARTUP_SITE } from "./scene/startupSite";
+import { mountRejectionMessage } from "./scene/mountSurface";
 import { cesiumFrustumFovDeg } from "./optics/viewfinder";
 import {
   aimAtTarget,
@@ -158,6 +159,8 @@ export default function App() {
   const configurationId = useSolarHouseStore((s) => s.cameraConfigurationId);
   const [mountSightLines, setMountSightLines] = useState<Record<string, SightLineAnalysis | "PENDING" | "FAILED">>({});
   const [frustumVisible, setFrustumVisible] = useState(true);
+  /** Why the last mounting click was refused, if it was. */
+  const [placementNotice, setPlacementNotice] = useState<string | null>(null);
   const [overlayVisible, setOverlayVisible] = useState(true);
 
   /** The reference object the pixel estimates are measured against. */
@@ -452,11 +455,19 @@ export default function App() {
           { ...(store.surfCam ?? {}), label: "House-mounted camera", mountHeightMeters },
         ));
         store.armSurfCam(false);
+        setPlacementNotice(null);
         void settleSurfCamera({
           latitude: surface.latitude,
           longitude: surface.longitude,
           height: house.position.height,
         });
+      },
+      onHouseClickRejected: (reason) => {
+        const store = useSolarHouseStore.getState();
+        if (store.appMode !== "SURF_CAM" || !store.surfCamArmed) return;
+        // Stay armed so the next click can land on a solid surface, and say
+        // why rather than letting the click look like it did nothing.
+        setPlacementNotice(mountRejectionMessage(reason));
       },
       onGroundClick: (location) => {
         const store = useSolarHouseStore.getState();
@@ -1469,6 +1480,7 @@ export default function App() {
             terrainReady={terrainStatus === "READY"}
             onArm={() => {
               const store = useSolarHouseStore.getState();
+              setPlacementNotice(null);
               if (store.surfCamArmed) {
                 store.armSurfCam(false);
                 return;
@@ -1476,6 +1488,7 @@ export default function App() {
               if (store.lookingThrough) handleReturnView();
               store.armSurfCam(true);
             }}
+            placementNotice={placementNotice}
             onChange={(patch) =>
               useSolarHouseStore.getState().updateSurfCam(patch)
             }

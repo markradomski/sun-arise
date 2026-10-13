@@ -8,6 +8,10 @@ import {
   type Scene,
 } from "cesium";
 import type { SceneObject, TerrainStatus } from "../scene/types";
+import {
+  validateMountSurface,
+  type MountRejection,
+} from "../scene/mountSurface";
 import { useSolarHouseStore } from "../state/store";
 import type { SelectionOverlay } from "./SelectionOverlay";
 import { loadedHeight } from "./terrain";
@@ -38,6 +42,13 @@ const HANDLE_HIT_RADIUS_PX = 22;
 
 /** Movement below this is a click rather than a drag. */
 const CLICK_SLOP_PX = 4;
+
+/**
+ * How deep to look past visualisation primitives for the house underneath.
+ * The frustum contributes a handful of polylines over any one pixel; this is
+ * bounded so a dense scene cannot turn one click into an unbounded pick.
+ */
+const DRILL_PICK_LIMIT = 8;
 
 type GestureKind = "move" | "rotate";
 
@@ -72,8 +83,13 @@ export interface DragControllerOptions {
   scene: Scene;
   overlay: SelectionOverlay;
   getTerrainStatus: () => TerrainStatus;
-  /** Fired for a click that did not land on a scene object. */
+  /** Fired when a click lands on a usable mounting surface of a house. */
   onHouseClick?: (location: { latitude: number; longitude: number; height: number }, house: SceneObject) => void;
+  /**
+   * Fired when a click hit a house but the depth pick could not be trusted.
+   * Carries no position: the caller must not fall back to terrain.
+   */
+  onHouseClickRejected?: (reason: MountRejection, house: SceneObject) => void;
   onGroundClick?: (location: {
     latitude: number;
     longitude: number;
@@ -376,20 +392,7 @@ export class DragController {
 
     const store = useSolarHouseStore.getState();
     if (store.appMode === "SURF_CAM" && store.surfCamArmed) {
-      const house = this.pickObject(event.position);
-      if (!house || house.type !== "house" || !this.options.onHouseClick) return;
-      // pickPosition uses the visible 3D model surface, unlike globe.pick,
-      // which always returns the bare terrain beneath the house.
-      const surface = this.options.scene.pickPositionSupported
-        ? this.options.scene.pickPosition(event.position)
-        : undefined;
-      if (!surface) return;
-      const hit = Cartographic.fromCartesian(surface);
-      this.options.onHouseClick({
-        latitude: CesiumMath.toDegrees(hit.latitude),
-        longitude: CesiumMath.toDegrees(hit.longitude),
-        height: hit.height,
-      }, house);
+      this.placeOnHouse(event.position);
       return;
     }
 
@@ -402,6 +405,45 @@ export class DragController {
       height:
         loadedHeight(this.options.scene.globe, ground.latitude, ground.longitude) ?? 0,
     });
+  }
+
+  /**
+   * Mounts the camera on the house under the cursor, or reports why not.
+   *
+   * The object pick drills past visualisation drawn on top; the depth read
+   * is then validated, because glazing does not write dependable depth.
+   */
+  private placeOnHouse(windowPosition: Cartesian2 | any) {
+    const house = this.drillForObject(windowPosition);
+    if (!house || house.type !== "house" || !this.options.onHouseClick) return;
+
+    // pickPosition uses the visible 3D model surface, unlike globe.pick,
+    // which always returns the bare terrain beneath the house. It reads the
+    // depth buffer, and the house models contain glazing, which does not
+    // write dependable depth — so the result is checked against the
+    // model's own bounds before it is allowed to move the camera.
+    const surface = this.options.scene.pickPositionSupported
+      ? this.options.scene.pickPosition(windowPosition)
+      : undefined;
+    const hit = surface ? Cartographic.fromCartesian(surface) : undefined;
+    const picked = hit
+      ? {
+          latitude: CesiumMath.toDegrees(hit.latitude),
+          longitude: CesiumMath.toDegrees(hit.longitude),
+          height: hit.height,
+        }
+      : undefined;
+
+
+    const validated = validateMountSurface(picked, house);
+    if (!validated.ok) {
+      // Deliberately no terrain fallback: a mount the user believes is on
+      // the roof must never silently become one on the ground.
+      this.options.onHouseClickRejected?.(validated.reason, house);
+      return;
+    }
+
+    this.options.onHouseClick(validated.surface, house);
   }
 
   private canvasPoint(event: PointerEvent): Cartesian2 {
@@ -493,11 +535,32 @@ export class DragController {
   // ---------------------------------------------------------------- helpers
 
   private pickObject(windowPosition: Cartesian2 | any): SceneObject | undefined {
-    const picked = this.options.scene.pick(windowPosition);
-    const candidate = picked?.id as SceneObject | undefined;
-    return candidate && typeof candidate === "object" && "type" in candidate
-      ? candidate
-      : undefined;
+    return asSceneObject(this.options.scene.pick(windowPosition));
+  }
+
+  /**
+   * The scene object under the cursor, looking past the visualisation drawn
+   * on top of it.
+   *
+   * The camera frustum is polylines in world space, and its apex sits exactly
+   * on the roof the user is trying to click. A plain `pick` returns that
+   * polyline and the house behind it is never considered, so placement
+   * silently does nothing on the very spot most worth choosing. Drilling
+   * through takes the first real scene object instead, which leaves the
+   * frustum visible and still pickable for everything else.
+   */
+  private drillForObject(
+    windowPosition: Cartesian2 | any,
+  ): SceneObject | undefined {
+    const picks = this.options.scene.drillPick(
+      windowPosition,
+      DRILL_PICK_LIMIT,
+    ) as unknown[];
+    for (const pick of picks ?? []) {
+      const candidate = asSceneObject(pick);
+      if (candidate) return candidate;
+    }
+    return undefined;
   }
 
   /**
@@ -554,4 +617,16 @@ function normaliseDegrees(value: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * A pick result is a scene object only when its id is one of ours. Cesium
+ * entities drawn for visualisation carry an `Entity` instead, which has no
+ * `type`.
+ */
+export function asSceneObject(pick: unknown): SceneObject | undefined {
+  const candidate = (pick as { id?: unknown } | undefined)?.id;
+  return candidate && typeof candidate === "object" && "type" in candidate
+    ? (candidate as SceneObject)
+    : undefined;
 }
