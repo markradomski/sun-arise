@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { SolarPosition } from "../types";
 import type { CameraMode } from "../cesium/CameraController";
 import type { CivilZone } from "../solar/timezone";
@@ -37,6 +37,30 @@ const VIEWS: { mode: CameraMode; label: string }[] = [
 ];
 
 export default function Controls(props: Props) {
+  const [collapsed, setCollapsed] = useState(false);
+  const bodyId = useId();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 700px)");
+    if (media.matches) setCollapsed(true);
+    const onChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setCollapsed(true);
+    };
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+  useLayoutEffect(() => {
+    if (restoreFocus.current) {
+      restoreFocus.current = false;
+      toggleRef.current?.focus();
+    }
+  }, [collapsed]);
+  const togglePanel = () => {
+    restoreFocus.current = true;
+    setCollapsed((value) => !value);
+  };
+
   // Everything shown here is civil time at the *site*, not in the browser's
   // own timezone.
   const parts = civilParts(props.date, props.zone.timeZone);
@@ -49,12 +73,30 @@ export default function Controls(props: Props) {
   ].join("-");
 
   return (
-    <aside className="controls">
-      <div className="brand">
-        <div className="brand-mark">☀</div>
-        <div>
-          <div className="eyebrow">SUN ARISE</div>
-          <h1>{props.siteName}</h1>
+    <aside className={`controls${collapsed ? " collapsed" : ""}`}>
+      <button ref={toggleRef} type="button" className="panel-toggle panel-toggle-fixed"
+        onClick={togglePanel} aria-expanded={!collapsed} aria-controls={bodyId}
+        aria-label={collapsed ? "Expand control panel" : "Collapse control panel"}
+        title={collapsed ? "Expand panel" : "Collapse panel"}>
+        {collapsed ? "☰" : "‹"}
+      </button>
+      {collapsed && <div className="surf-dock" role="toolbar" aria-label="Compact solar controls">
+        <div className="dock-brand"><img className="brand-mark" src="/brand/sun-arise-mark.png" alt="" aria-hidden="true" width={30} height={30} draggable={false} /><strong>Sun Arise</strong></div>
+        <div className="dock-status"><span className="dock-caption">Solar time</span><strong>{formatClockMinutes(minutes)}</strong></div>
+        <label className="dock-control dock-solar-time">
+          <span>Time <strong>{formatClockMinutes(minutes)}</strong></span>
+          <input type="range" min="0" max="1439" value={minutes} onChange={(e) => props.onTime(Number(e.target.value))} />
+        </label>
+        <button className="dock-preview" onClick={props.onToggle}>{props.playing ? "Pause sun" : "Play sun"}</button>
+        <span className="dock-sun-status">Sun {Math.round(props.solar.altitudeDeg)}° above horizon</span>
+      </div>}
+      <div className="controls-body" id={bodyId}>
+      <div className="brand sticky-brand">
+        <img className="brand-mark" src="/brand/sun-arise-mark.png" alt="" aria-hidden="true" width={256} height={256} draggable={false} />
+        <div className="brand-text">
+          <h1>Sun Arise</h1>
+          <p className="eyebrow">Light places better</p>
+          <p className="brand-location">{props.siteName}</p>
         </div>
       </div>
 
@@ -149,6 +191,7 @@ export default function Controls(props: Props) {
       {props.children}
 
       <p className="hint">Drag the house to move it · drag the white handle to turn it</p>
+      </div>
     </aside>
   );
 }

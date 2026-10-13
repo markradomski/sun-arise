@@ -482,3 +482,120 @@ input[type="date"]:focus {
   display: inline-block;
   border: 1px solid rgba(255,255,255,.12);
 }
+
+
+/* Solar panel backport: compact dock and accessible, persistent toggle. */
+.controls {
+  --toggle-left: 15px;
+  --toggle-top: 15px;
+  transition: width 260ms ease, background-color 260ms ease;
+}
+.controls > .panel-toggle-fixed {
+  position: absolute;
+  top: var(--toggle-top);
+  left: var(--toggle-left);
+  z-index: 50;
+  margin: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: #222931;
+  color: #f5f4ef;
+  border: 1px solid #66717a;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.controls > .panel-toggle-fixed:focus-visible,
+.section-info-button:focus-visible { outline: 2px solid #f3d077; outline-offset: 3px; }
+.controls:not(.collapsed) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-right: 4px;
+}
+.controls:not(.collapsed) .controls-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(180,185,189,.4) transparent;
+}
+.controls:not(.collapsed) .sticky-brand {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  padding-left: 34px;
+  background: #0a0c0f;
+}
+.controls.collapsed {
+  z-index: 20;
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  right: 220px;
+  bottom: auto;
+  width: auto;
+  max-height: none;
+  padding: 10px 14px;
+  overflow: visible;
+}
+.controls.collapsed .controls-body { display: none; }
+.surf-dock {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-left: 48px;
+  min-width: 0;
+}
+.dock-brand { display: flex; align-items: center; gap: 9px; white-space: nowrap; flex: none; }
+.dock-sun-icon { color: #f3d077; font-size: 26px; }
+.dock-status { display: flex; flex-direction: column; min-width: 90px; font-size: 12px; }
+.dock-caption { color: #9da2aa; font-size: 10px; }
+.dock-control { display: flex; flex: 1; min-width: 85px; max-width: 230px; flex-direction: column; gap: 3px; font-size: 11px; }
+.dock-control span { display: flex; justify-content: space-between; gap: 8px; }
+.dock-control input { width: 100%; margin: 0; accent-color: #f3d077; }
+.dock-preview { flex: none; padding: 9px 12px; border-radius: 8px; cursor: pointer; }
+.dock-sun-status { color: #b7bac0; font-size: 12px; white-space: nowrap; }
+.panel-section-header { display: flex; align-items: center; position: relative; }
+.panel-section-header .panel-section-head { flex: 1; min-width: 0; }
+.section-info-anchor { position: relative; flex: none; }
+.section-info-button { width: 22px; height: 22px; padding: 0; border: 1px solid #737b82; border-radius: 50%; background: transparent; color: #d7d5cd; cursor: pointer; }
+.section-info-popover { position: fixed; z-index: 100; left: min(440px,50vw); top: 22%; width: min(310px,calc(100vw - 40px)); padding: 18px 38px 18px 18px; border-radius: 12px; border: 1px solid #5c6269; background: #1b2128; color: #eae8e1; box-shadow: 0 12px 45px #000a; font-size: 13px; line-height: 1.55; }
+.section-info-close { position: absolute; right: 8px; top: 8px; border: 0; background: transparent; color: #eee; font-size: 20px; cursor: pointer; }
+@media (min-width: 701px) {
+  .controls:not(.collapsed) { width: 340px; min-width: 340px; max-width: none; }
+}
+@media (max-width: 1100px) {
+  .controls.collapsed { right: 175px; }
+  .dock-sun-status { display: none; }
+}
+@media (max-width: 700px) {
+  .controls { --toggle-left: 10px; --toggle-top: 10px; }
+  .controls.collapsed { top: 10px; left: 10px; right: 10px; bottom: auto; padding: 9px; width: auto; }
+  .controls:not(.collapsed) { left: 10px; right: 10px; top: 10px; bottom: 10px; width: auto; min-width: 0; max-height: none; }
+  .surf-dock { gap: 10px; padding-left: 38px; }
+  .dock-brand strong, .dock-status { display: none; }
+  .dock-control { min-width: 65px; }
+  .dock-preview { padding: 7px 9px; }
+  .section-info-popover { left: 20px; top: 12%; }
+}
+@media (prefers-reduced-motion: reduce) { .controls { transition: none; } }
+
+/* Restored Sun Arise identity, adapted from the Surf Cam branch. */
+.controls .brand { display: grid; grid-template-columns: 62px minmax(0,1fr); align-items: center; gap: 14px; }
+.controls .brand .brand-mark { width: 62px; height: 62px; object-fit: contain; }
+.controls .brand-text { min-width: 0; }
+.controls .brand h1 { font-size: 30px; line-height: 1.1; white-space: nowrap; margin: 0; }
+.controls .brand .eyebrow { margin: 5px 0 0; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; }
+.controls .brand-location { margin: 7px 0 0; font-size: 12px; color: #aeb4ba; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.controls:not(.collapsed) .sticky-brand { padding-left: 30px; padding-top: 0; }
+.dock-brand .brand-mark { width: 30px; height: 30px; object-fit: contain; }
+@media (max-width: 700px) {
+  .controls .brand { grid-template-columns: 48px minmax(0,1fr); gap: 11px; }
+  .controls .brand .brand-mark { width: 48px; height: 48px; }
+  .controls .brand h1 { font-size: 26px; }
+}
