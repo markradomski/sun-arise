@@ -584,3 +584,18 @@ input[type="date"]:focus {
   .section-info-popover { left: 20px; top: 12%; }
 }
 @media (prefers-reduced-motion: reduce) { .controls { transition: none; } }
+
+/* Restored Sun Arise identity, adapted from the Surf Cam branch. */
+.controls .brand { display: grid; grid-template-columns: 62px minmax(0,1fr); align-items: center; gap: 14px; }
+.controls .brand .brand-mark { width: 62px; height: 62px; object-fit: contain; }
+.controls .brand-text { min-width: 0; }
+.controls .brand h1 { font-size: 30px; line-height: 1.1; white-space: nowrap; margin: 0; }
+.controls .brand .eyebrow { margin: 5px 0 0; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; }
+.controls .brand-location { margin: 7px 0 0; font-size: 12px; color: #aeb4ba; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.controls:not(.collapsed) .sticky-brand { padding-left: 30px; padding-top: 0; }
+.dock-brand .brand-mark { width: 30px; height: 30px; object-fit: contain; }
+@media (max-width: 700px) {
+  .controls .brand { grid-template-columns: 48px minmax(0,1fr); gap: 11px; }
+  .controls .brand .brand-mark { width: 48px; height: 48px; }
+  .controls .brand h1 { font-size: 26px; }
+}
