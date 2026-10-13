@@ -895,17 +895,30 @@ function LensComparison(props: {
               <td>
                 {row.horizontalFovDeg}°×{row.verticalFovDeg.toFixed(0)}°
               </td>
-              <td>{formatFrameWidth(row.frameWidthMeters)}</td>
-              <td>{row.inFrame ? `${formatPixels(row.objectWidthPixels)} px` : "—"}</td>
+              <td>
+                {formatFrameWidth(row.frameWidthMeters)} ×{" "}
+                {formatFrameWidth(row.frameHeightMeters)}
+              </td>
+              <td>
+                {row.inFrame ? `${formatPixels(row.objectHeightPixels)} px` : "—"}
+              </td>
               <td>{formatMetres(row.metersPerPixel)}</td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="note muted">
-        Frame is the ground width the lens spans at the target. A dash means
-        the target falls outside that framing from the camera's current aim —
-        geometry only, and separate from whether terrain stands in the way.
+        Frame is the width × height the lens covers at the target. Object is
+        the reference's <em>height</em> in pixels, which is the dimension that
+        matters for anything upright. A dash means the target falls outside
+        that framing from the camera's current aim — geometry only, and
+        separate from whether terrain stands in the way.
+      </p>
+      <p className="note muted">
+        Pixel counts are an ideal pinhole projection. They say how much of the
+        sensor something covers, never whether it could be recognised: lens
+        sharpness, haze, sea spray, heat shimmer, compression, light and mount
+        vibration all subtract from this and none of them are modelled.
       </p>
     </div>
   );

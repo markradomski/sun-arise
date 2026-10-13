@@ -60,6 +60,10 @@ export const LENS_PRESETS: LensPreset[] = [
   { id: "wide", label: "Wide", horizontalFovDeg: 84, focalLength35mm: 24 },
   { id: "standard", label: "Standard", horizontalFovDeg: 54, focalLength35mm: 35 },
   { id: "tele", label: "Tele", horizontalFovDeg: 23, focalLength35mm: 85 },
+  // The gap between 23° and 10° is where a surf break at a few kilometres
+  // stops being a smudge, so it gets a stop of its own rather than forcing a
+  // choice between the two either side of it.
+  { id: "long-tele", label: "Long tele", horizontalFovDeg: 15, focalLength35mm: 130 },
   { id: "super-tele", label: "Super tele", horizontalFovDeg: 10, focalLength35mm: 200 },
 ];
 

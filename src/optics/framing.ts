@@ -12,8 +12,8 @@ import {
 } from "./geodesy";
 import type { EnuOffset } from "./frustum";
 import {
+  frameHeightMeters,
   frameWidthMeters,
-  metersPerPixel,
   outputResolution,
   projectDirection,
   projectObjectSize,
@@ -33,7 +33,17 @@ import {
  */
 
 export interface Framing {
+  /** Geodesic distance over the ground, camera mount to target. */
   distanceMeters: number;
+  /**
+   * Straight-line distance from the lens to the target.
+   *
+   * This, not the ground distance, is what the optics see: frame coverage and
+   * ground sampling are measured across the line of sight. At a surf camera's
+   * geometry the two differ by a fraction of a percent, but they are different
+   * quantities and mixing them put two different numbers under one label.
+   */
+  slantRangeMeters: number;
   bearingDeg: number;
   /** Angle between the optical axis and the target. */
   angularOffsetDeg: number;
@@ -119,9 +129,11 @@ export function frameTarget(
   const setup = imagingSetup(camera, resolutionId, horizontalFovDeg);
   const { offset, distanceMeters, bearingDeg } = targetOffset(camera, target);
   const image = projectDirection(setup, offset);
+  const slantRangeMeters = Math.hypot(offset.east, offset.north, offset.up);
 
   return {
     distanceMeters,
+    slantRangeMeters,
     bearingDeg,
     angularOffsetDeg: image.angularOffsetDeg,
     horizontalFovDeg,
@@ -143,10 +155,17 @@ export interface LensComparisonRow {
   label: string;
   horizontalFovDeg: number;
   verticalFovDeg: number;
-  /** Ground width the frame spans at the target. */
+  /** Width the frame spans across the line of sight at the target. */
   frameWidthMeters: number;
+  /** Height the frame spans at the target. */
+  frameHeightMeters: number;
   /** Pixel width of the reference object at this lens. */
   objectWidthPixels: number;
+  /**
+   * Pixel height of the reference object. For an upright reference such as a
+   * person this is the dimension that matters, and it is not the width.
+   */
+  objectHeightPixels: number;
   metersPerPixel: number;
   /**
    * Whether the target falls inside this framing. Geometry only: terrain can
@@ -167,8 +186,6 @@ export function compareLenses(
   resolutionId: string,
   reference: ReferenceObject,
 ): LensComparisonRow[] {
-  const { distanceMeters } = targetOffset(camera, target);
-
   return LENS_PRESETS.map((preset) => {
     const framing = frameTarget(
       camera,
@@ -177,17 +194,20 @@ export function compareLenses(
       reference,
       preset.horizontalFovDeg,
     );
+    // Coverage and sampling are measured along the line of sight, and come
+    // from the same framing the pixel figures do, so one row cannot carry two
+    // distances or two sampling numbers.
+    const range = framing.slantRangeMeters;
     return {
       presetId: preset.id,
       label: preset.label,
       horizontalFovDeg: preset.horizontalFovDeg,
       verticalFovDeg: framing.verticalFovDeg,
-      frameWidthMeters: frameWidthMeters(preset.horizontalFovDeg, distanceMeters),
+      frameWidthMeters: frameWidthMeters(preset.horizontalFovDeg, range),
+      frameHeightMeters: frameHeightMeters(framing.verticalFovDeg, range),
       objectWidthPixels: framing.size.widthPixels,
-      metersPerPixel: metersPerPixel(
-        imagingSetup(camera, resolutionId, preset.horizontalFovDeg),
-        distanceMeters,
-      ),
+      objectHeightPixels: framing.size.heightPixels,
+      metersPerPixel: framing.size.metersPerPixel,
       inFrame: framing.image.inFrame,
       active: Math.abs(preset.horizontalFovDeg - camera.horizontalFovDeg) < 0.5,
     };

@@ -59,7 +59,10 @@ export interface TargetSizePreset {
 
 export const TARGET_SIZES: TargetSizePreset[] = [
   { id: "detail", label: "1 m · wave detail", widthMeters: 1, heightMeters: 1 },
-  { id: "person", label: "2 m · person", widthMeters: 2, heightMeters: 2 },
+  // Two metres tall and about half a metre across. Carrying the real
+  // proportions matters: a surfer is found in an image by their height
+  // against the water, and a square would overstate the width threefold.
+  { id: "person", label: "2 m · person", widthMeters: 0.5, heightMeters: 2 },
   {
     id: "section",
     label: "5 m · wave section",
@@ -272,6 +275,19 @@ export function frameWidthMeters(
   const halfWidth = Math.tan((horizontalFovDeg / 2) * DEG);
   if (!(halfWidth > 0)) return 0;
   return 2 * distanceMeters * halfWidth;
+}
+
+/**
+ * Height the frame spans at a given range, across the line of sight.
+ *
+ * The companion to `frameWidthMeters`. It decides whether a swell and the
+ * surfer on it fit in the frame together, which width alone cannot say.
+ */
+export function frameHeightMeters(
+  verticalFovDegrees: number,
+  distanceMeters: number,
+): number {
+  return frameWidthMeters(verticalFovDegrees, distanceMeters);
 }
 
 export interface AimAtTarget {
